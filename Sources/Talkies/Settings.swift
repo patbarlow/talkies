@@ -12,6 +12,7 @@ final class Settings: ObservableObject {
 
     @Published private(set) var groqKey: String?
     @Published private(set) var anthropicKey: String?
+    @Published private(set) var sessionToken: String?
 
     @Published var cleanupEnabled: Bool {
         didSet { UserDefaults.standard.set(cleanupEnabled, forKey: "cleanupEnabled") }
@@ -31,6 +32,7 @@ final class Settings: ObservableObject {
     private init() {
         self.groqKey = Keychain.read("groq")
         self.anthropicKey = Keychain.read("anthropic")
+        self.sessionToken = Keychain.read("session").flatMap { $0.isEmpty ? nil : $0 }
         self.cleanupEnabled = UserDefaults.standard.object(forKey: "cleanupEnabled") as? Bool ?? true
         self.customVocabulary = UserDefaults.standard.string(forKey: "customVocabulary")
 
@@ -50,6 +52,11 @@ final class Settings: ObservableObject {
     func setAnthropicKey(_ value: String) {
         anthropicKey = value
         Keychain.write("anthropic", value)
+    }
+
+    func setSessionToken(_ value: String?) {
+        sessionToken = value
+        Keychain.write("session", value ?? "")
     }
 }
 

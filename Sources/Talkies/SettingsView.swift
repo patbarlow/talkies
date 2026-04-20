@@ -9,11 +9,12 @@ final class SettingsRouter: ObservableObject {
 
 struct SettingsView: View {
     @StateObject private var router = SettingsRouter.shared
+    @StateObject private var auth = AuthStore.shared
 
     enum Pane: String, Hashable, CaseIterable, Identifiable {
         case home, library
         case hotkey, cleanup, vocabulary
-        case permissions, keys
+        case account, permissions, keys
         case about
 
         var id: String { rawValue }
@@ -25,6 +26,7 @@ struct SettingsView: View {
             case .hotkey: "Hotkey"
             case .cleanup: "Cleanup"
             case .vocabulary: "Vocabulary"
+            case .account: "Account"
             case .permissions: "Permissions"
             case .keys: "API Keys"
             case .about: "About"
@@ -38,6 +40,7 @@ struct SettingsView: View {
             case .hotkey: "keyboard.fill"
             case .cleanup: "sparkles"
             case .vocabulary: "book.fill"
+            case .account: "person.fill"
             case .permissions: "checkmark.shield.fill"
             case .keys: "key.fill"
             case .about: "info.circle.fill"
@@ -51,6 +54,7 @@ struct SettingsView: View {
             case .hotkey: Tile.hotkey
             case .cleanup: Tile.cleanup
             case .vocabulary: Tile.vocab
+            case .account: Tile.account
             case .permissions: Tile.perms
             case .keys: Tile.keys
             case .about: Tile.about
@@ -59,6 +63,18 @@ struct SettingsView: View {
     }
 
     var body: some View {
+        Group {
+            if !auth.isSignedIn {
+                SignInPane()
+            } else {
+                splitView
+            }
+        }
+        .frame(minWidth: 760, minHeight: 520)
+        .tint(.mint)
+    }
+
+    private var splitView: some View {
         NavigationSplitView {
             List(selection: $router.selection) {
                 row(.home)
@@ -71,6 +87,7 @@ struct SettingsView: View {
                 }
 
                 Section("Setup") {
+                    row(.account)
                     row(.permissions)
                     row(.keys)
                 }
@@ -90,6 +107,7 @@ struct SettingsView: View {
                     case .hotkey: HotkeyPane()
                     case .cleanup: CleanupPane()
                     case .vocabulary: VocabularyPane()
+                    case .account: AccountPane()
                     case .permissions: PermissionsPane()
                     case .keys: KeysPane()
                     case .about: AboutPane()
@@ -99,8 +117,6 @@ struct SettingsView: View {
             }
             .navigationTitle(router.selection.title)
         }
-        .frame(minWidth: 820, minHeight: 580)
-        .tint(.mint)
     }
 
     private func row(_ pane: Pane) -> some View {

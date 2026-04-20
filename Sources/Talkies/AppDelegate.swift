@@ -37,13 +37,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
 
-        // First-launch: open Settings → Permissions so the user sees an explicit setup flow
-        // instead of silent system prompts.
+        // First-launch or no session: open Settings so the user can sign in and
+        // grant permissions. The view auto-swaps to the sign-in pane when there's
+        // no session, and we jump to Permissions otherwise.
         let firstLaunch = !UserDefaults.standard.bool(forKey: "hasLaunchedBefore")
         UserDefaults.standard.set(true, forKey: "hasLaunchedBefore")
-        if firstLaunch {
+        if firstLaunch || Settings.shared.sessionToken == nil {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
-                SettingsRouter.shared.selection = .permissions
+                if Settings.shared.sessionToken != nil {
+                    SettingsRouter.shared.selection = .permissions
+                }
                 self?.openSettings()
             }
         }

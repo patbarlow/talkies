@@ -1,25 +1,42 @@
 import Foundation
 
 enum TranscriberError: Error {
-    case missingKey
+    case missingCredentials
     case badResponse(Int, String)
 }
 
-/// Sends audio to Groq's OpenAI-compatible Whisper endpoint.
-/// Swap this implementation to hit Deepgram / OpenAI / Apple SpeechAnalyzer as needed.
+/// Two modes:
+///   1. Signed-in — POSTs audio to our Worker, which proxies to Groq and
+///      enforces the weekly word limit.
+///   2. BYOK — if the user has set a Groq API key directly, goes straight to Groq.
 final class Transcriber {
     static let shared = Transcriber()
 
-    private let endpoint = URL(string: "https://api.groq.com/openai/v1/audio/transcriptions")!
+    private let groqEndpoint = URL(string: "https://api.groq.com/openai/v1/audio/transcriptions")!
     private let model = "whisper-large-v3-turbo"
 
     func transcribe(wavURL: URL) async throws -> String {
+        let vocab = await Settings.shared.customVocabulary
+
+        // Prefer the signed-in path — enforces plan limits on the backend.
+        if let session = await Settings.shared.sessionToken, !session.isEmpty {
+            let result = try await APIClient.shared.transcribe(
+                audio: wavURL,
+                prompt: vocab,
+                session: session
+            )
+            // Best-effort usage refresh for the UI.
+            Task { await AuthStore.shared.refresh() }
+            return result.text
+        }
+
+        // BYOK fallback.
         guard let key = await Settings.shared.groqKey, !key.isEmpty else {
-            throw TranscriberError.missingKey
+            throw TranscriberError.missingCredentials
         }
 
         let boundary = "Talkies-\(UUID().uuidString)"
-        var request = URLRequest(url: endpoint)
+        var request = URLRequest(url: groqEndpoint)
         request.httpMethod = "POST"
         request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
         request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
@@ -29,11 +46,9 @@ final class Transcriber {
         body.appendField(boundary: boundary, name: "language", value: "en")
         body.appendField(boundary: boundary, name: "response_format", value: "json")
         body.appendField(boundary: boundary, name: "temperature", value: "0")
-
-        if let vocab = await Settings.shared.customVocabulary, !vocab.isEmpty {
+        if let vocab, !vocab.isEmpty {
             body.appendField(boundary: boundary, name: "prompt", value: vocab)
         }
-
         let audio = try Data(contentsOf: wavURL)
         body.appendFile(boundary: boundary, name: "file", filename: "audio.wav", contentType: "audio/wav", data: audio)
         body.appendString("--\(boundary)--\r\n")

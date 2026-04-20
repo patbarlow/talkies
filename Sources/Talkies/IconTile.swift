@@ -23,6 +23,7 @@ enum Tile {
     static let hotkey    = grad(.teal, .blue)
     static let cleanup   = grad(.pink, .purple)
     static let vocab     = grad(.indigo, .blue)
+    static let account   = grad(.mint, .teal)
     static let perms     = grad(.mint, .green)
     static let keys      = grad(.yellow, .orange)
     static let about     = grad(.gray, Color.gray.opacity(0.55))
