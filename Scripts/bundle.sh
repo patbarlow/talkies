@@ -38,13 +38,23 @@ SIGN_ID="${SIGN_ID:-Developer ID Application: Pat Barlow (T544U3WVL6)}"
 PROFILE="Resources/embedded.provisionprofile"
 ENTITLEMENTS="Resources/Talkies.entitlements"
 
-if [[ -f "$PROFILE" ]]; then
-    echo "==> Embedding provisioning profile"
+profile_has_applesignin() {
+    security cms -D -i "$1" 2>/dev/null | grep -q "com.apple.developer.applesignin"
+}
+
+if [[ -f "$PROFILE" ]] && profile_has_applesignin "$PROFILE"; then
+    echo "==> Embedding provisioning profile (authorizes Sign in with Apple)"
     cp "$PROFILE" "$APP/Contents/embedded.provisionprofile"
     SIGN_ENTITLEMENTS="$ENTITLEMENTS"
 else
-    echo "⚠️  No $PROFILE — stripping Sign in with Apple entitlement."
-    echo "    See README for how to add one. App will launch, Sign in with Apple won't."
+    if [[ -f "$PROFILE" ]]; then
+        echo "⚠️  Profile at $PROFILE does NOT authorize Sign in with Apple."
+        echo "    The App ID's SIWA capability isn't saved in the dev portal."
+        echo "    Embedding the profile anyway, but stripping applesignin entitlement."
+        cp "$PROFILE" "$APP/Contents/embedded.provisionprofile"
+    else
+        echo "⚠️  No $PROFILE — stripping Sign in with Apple entitlement."
+    fi
     SIGN_ENTITLEMENTS="$(mktemp -t talkies-ent).plist"
     cp "$ENTITLEMENTS" "$SIGN_ENTITLEMENTS"
     /usr/libexec/PlistBuddy -c "Delete :com.apple.developer.applesignin" "$SIGN_ENTITLEMENTS" 2>/dev/null || true
