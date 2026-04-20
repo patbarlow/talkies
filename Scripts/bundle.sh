@@ -26,8 +26,13 @@ else
     echo "Warning: Resources/AppIcon.icns missing — run 'swift Scripts/make-icon.swift' to regenerate."
 fi
 
-echo "==> Ad-hoc signing with entitlements"
-codesign --force --deep --sign - \
+# Signing identity: Developer ID Application tied to team T544U3WVL6.
+# Required so restricted entitlements (Sign in with Apple) aren't stripped.
+# Override via env: `SIGN_ID="Apple Development: ..."  ./Scripts/bundle.sh`
+SIGN_ID="${SIGN_ID:-Developer ID Application: Pat Barlow (T544U3WVL6)}"
+echo "==> Signing with: $SIGN_ID"
+codesign --force --deep \
+    --sign "$SIGN_ID" \
     --entitlements "Resources/Talkies.entitlements" \
     --options runtime \
     "$APP"
