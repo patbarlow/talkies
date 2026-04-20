@@ -1,7 +1,6 @@
 export interface User {
   id: string;
-  apple_sub: string;
-  email: string | null;
+  email: string;
   name: string | null;
   plan: "free" | "pro";
   week_words: number;
@@ -18,7 +17,7 @@ export const WEEK_LIMIT_FREE = 2_000;
 
 export interface PublicUser {
   id: string;
-  email: string | null;
+  email: string;
   name: string | null;
   plan: "free" | "pro";
   weekWords: number;
@@ -40,29 +39,23 @@ export function publicUser(u: User): PublicUser {
   };
 }
 
-export async function upsertUser(
+export async function upsertUserByEmail(
   db: D1Database,
-  { appleSub, email, name }: { appleSub: string; email?: string; name?: string },
+  email: string,
+  name?: string,
 ): Promise<User> {
   const existing = await db
-    .prepare("SELECT * FROM users WHERE apple_sub = ?")
-    .bind(appleSub)
+    .prepare("SELECT * FROM users WHERE email = ?")
+    .bind(email)
     .first<User>();
 
   if (existing) {
-    // Apple only shares email + name on the first sign-in; fill them in if present.
-    if ((email && !existing.email) || (name && !existing.name)) {
+    if (name && !existing.name) {
       await db
-        .prepare(
-          `UPDATE users SET email = COALESCE(email, ?),
-                           name  = COALESCE(name, ?),
-                           updated_at = ?
-           WHERE id = ?`,
-        )
-        .bind(email ?? null, name ?? null, nowISO(), existing.id)
+        .prepare("UPDATE users SET name = ?, updated_at = ? WHERE id = ?")
+        .bind(name, nowISO(), existing.id)
         .run();
-      existing.email = existing.email ?? email ?? null;
-      existing.name = existing.name ?? name ?? null;
+      existing.name = name;
     }
     return existing;
   }
@@ -73,18 +66,17 @@ export async function upsertUser(
   await db
     .prepare(
       `INSERT INTO users (
-         id, apple_sub, email, name, plan,
+         id, email, name, plan,
          week_words, total_words, session_count, week_start,
          created_at, updated_at
-       ) VALUES (?, ?, ?, ?, 'free', 0, 0, 0, ?, ?, ?)`,
+       ) VALUES (?, ?, ?, 'free', 0, 0, 0, ?, ?, ?)`,
     )
-    .bind(id, appleSub, email ?? null, name ?? null, weekStart, now, now)
+    .bind(id, email, name ?? null, weekStart, now, now)
     .run();
 
   return {
     id,
-    apple_sub: appleSub,
-    email: email ?? null,
+    email,
     name: name ?? null,
     plan: "free",
     week_words: 0,
@@ -163,11 +155,10 @@ function nowISO(): string {
   return new Date().toISOString();
 }
 
-/** ISO string for the most recent Monday 00:00 UTC, matching the client's Stats logic. */
 function startOfWeekISO(): string {
   const now = new Date();
-  const day = now.getUTCDay();           // 0 = Sunday
-  const daysFromMonday = (day + 6) % 7;  // Sun=6, Mon=0, Tue=1, ...
+  const day = now.getUTCDay();
+  const daysFromMonday = (day + 6) % 7;
   const monday = new Date(now);
   monday.setUTCDate(now.getUTCDate() - daysFromMonday);
   monday.setUTCHours(0, 0, 0, 0);

@@ -1,9 +1,15 @@
--- Talkies API schema. Apply via `npm run db:migrate` and `npm run db:migrate:remote`.
+-- Talkies API schema. Apply via `npm run db:migrate[:remote]`.
+--
+-- NOTE: This rewrites the schema since the auth model changed from Apple sub
+-- to email magic link. If you've already run the Apple-based schema, the DROP
+-- statements below will discard those tables (no user data should exist yet).
 
-CREATE TABLE IF NOT EXISTS users (
+DROP TABLE IF EXISTS users;
+DROP TABLE IF EXISTS email_codes;
+
+CREATE TABLE users (
     id TEXT PRIMARY KEY,
-    apple_sub TEXT UNIQUE NOT NULL,
-    email TEXT,
+    email TEXT NOT NULL UNIQUE,
     name TEXT,
     plan TEXT NOT NULL DEFAULT 'free',
     week_words INTEGER NOT NULL DEFAULT 0,
@@ -16,5 +22,13 @@ CREATE TABLE IF NOT EXISTS users (
     updated_at TEXT NOT NULL
 );
 
-CREATE INDEX IF NOT EXISTS idx_users_apple_sub ON users(apple_sub);
-CREATE INDEX IF NOT EXISTS idx_users_stripe_customer ON users(stripe_customer_id);
+CREATE INDEX idx_users_email ON users(email);
+CREATE INDEX idx_users_stripe_customer ON users(stripe_customer_id);
+
+CREATE TABLE email_codes (
+    email TEXT PRIMARY KEY,
+    code_hash TEXT NOT NULL,
+    attempts INTEGER NOT NULL DEFAULT 0,
+    expires_at TEXT NOT NULL,
+    last_sent_at TEXT NOT NULL
+);

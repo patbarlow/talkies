@@ -1,6 +1,6 @@
 # Talkies API
 
-Cloudflare Worker + D1 backing Talkies. Sign in with Apple, session JWTs, transcription proxy (Groq Whisper), cleanup proxy (Claude Haiku), weekly word limit for free users, Stripe Checkout + webhook for Pro plans.
+Cloudflare Worker + D1 backing Talkies. Email magic-link auth, session JWTs, transcription proxy (Groq Whisper), cleanup proxy (Claude Haiku), weekly word limit for free users, Stripe Checkout + webhook for Pro plans.
 
 ## One-time setup
 
@@ -22,18 +22,25 @@ npm run db:migrate:remote
 npx wrangler secret put SESSION_SECRET            # openssl rand -hex 32
 npx wrangler secret put GROQ_API_KEY
 npx wrangler secret put ANTHROPIC_API_KEY
+npx wrangler secret put RESEND_API_KEY            # from resend.com
 npx wrangler secret put STRIPE_SECRET_KEY
 npx wrangler secret put STRIPE_WEBHOOK_SECRET
-npx wrangler secret put STRIPE_PRICE_ID_PRO       # after creating the product
+npx wrangler secret put STRIPE_PRICE_ID_PRO       # after creating the Stripe product
 ```
 
 For local dev, copy `.dev.vars.example` → `.dev.vars` and fill in the same values.
 
-## Apple Developer setup
+## Email delivery (Resend)
 
-1. In the Apple Developer portal → Identifiers, select your bundle ID `app.talkies.Talkies`, enable the **Sign In with Apple** capability.
-2. No Services ID needed for a native-only client — the bundle ID *is* the audience.
-3. In Xcode / `Talkies.entitlements`, add `com.apple.developer.applesignin = ["Default"]`.
+Sign-in codes go out through [Resend](https://resend.com).
+
+1. Sign up, grab an API key from the Resend dashboard → `wrangler secret put RESEND_API_KEY`.
+2. **For initial dev:** the default from-address is `onboarding@resend.dev`. Resend restricts this address to only delivering to email addresses you've verified on your Resend account — fine for testing with your own inbox.
+3. **For production:** add and verify `talkies.app` (or whatever domain you own) in the Resend dashboard. Then set `RESEND_FROM` so codes come from your address:
+   ```bash
+   npx wrangler secret put RESEND_FROM    # e.g. Talkies <login@talkies.app>
+   ```
+   (Or set it in `wrangler.toml` vars — it's not secret.)
 
 ## Run
 
@@ -46,16 +53,24 @@ npm run deploy       # production on *.workers.dev
 
 All responses are JSON unless noted.
 
-### `POST /auth/apple`
-Exchange an Apple identity token for a session.
-
+### `POST /auth/email/start`
+Send a 6-digit sign-in code to the email.
 ```
-Request:  { identityToken: string, email?: string, fullName?: string }
+Request:  { email: string }
+Response: { sent: true }  |  { error, retry_after? }
+```
+30-second cooldown per email to prevent spam.
+
+### `POST /auth/email/verify`
+Verify the code and get a session.
+```
+Request:  { email: string, code: string, fullName?: string }
 Response: { session: string, user: PublicUser }
 ```
+Codes expire after 10 minutes and are invalidated after 5 failed attempts.
 
 ### `GET /v1/me` (authed)
-Current user + usage + plan.
+Current user + plan + usage.
 
 ### `POST /v1/transcribe` (authed)
 Multipart: `audio` (File), `prompt` (optional string).  
@@ -93,12 +108,12 @@ The session JWT is signed with `SESSION_SECRET` (HS256), issuer `talkies-api`, 3
 src/
   index.ts              — router
   env.ts                — Env bindings type
-  apple.ts              — Apple JWT verification (jose + JWKS)
+  email.ts              — code generation + hashing + Resend sending
   session.ts            — HS256 session JWTs (jose)
   db.ts                 — D1 user queries + weekly rotation
   middleware/auth.ts    — Bearer → user, mounted on /v1/*
   routes/
-    auth.ts             — POST /auth/apple
+    auth.ts             — POST /auth/email/start + /auth/email/verify
     me.ts               — GET  /v1/me
     transcribe.ts       — POST /v1/transcribe
     cleanup.ts          — POST /v1/cleanup

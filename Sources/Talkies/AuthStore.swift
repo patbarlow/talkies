@@ -7,7 +7,7 @@ final class AuthStore: ObservableObject {
 
     @Published private(set) var currentUser: PublicUser?
     @Published private(set) var isSignedIn: Bool = false
-    @Published private(set) var isAuthenticating: Bool = false
+    @Published private(set) var isWorking: Bool = false
     @Published private(set) var lastError: String?
 
     private init() {
@@ -17,32 +17,42 @@ final class AuthStore: ObservableObject {
         }
     }
 
-    /// Exchange an Apple identity token for a Talkies session.
-    func signInWithApple(
-        identityToken: String,
-        email: String?,
-        fullName: String?
-    ) async {
-        isAuthenticating = true
+    /// Ask the backend to send a 6-digit code to `email`.
+    func requestCode(email: String) async -> Bool {
+        isWorking = true
         lastError = nil
-        defer { isAuthenticating = false }
-
+        defer { isWorking = false }
         do {
-            let result = try await APIClient.shared.authenticateWithApple(
-                identityToken: identityToken,
+            try await APIClient.shared.requestEmailCode(email: email)
+            return true
+        } catch {
+            lastError = error.localizedDescription
+            return false
+        }
+    }
+
+    /// Exchange `email` + `code` for a Talkies session.
+    func verify(email: String, code: String, fullName: String?) async -> Bool {
+        isWorking = true
+        lastError = nil
+        defer { isWorking = false }
+        do {
+            let result = try await APIClient.shared.verifyEmailCode(
                 email: email,
+                code: code,
                 fullName: fullName
             )
             Settings.shared.setSessionToken(result.session)
             currentUser = result.user
             isSignedIn = true
+            return true
         } catch {
             lastError = error.localizedDescription
-            NSLog("Talkies sign-in failed: \(error)")
+            return false
         }
     }
 
-    /// Hit /v1/me to refresh the cached user snapshot (called after recordings, etc.).
+    /// Hit /v1/me to refresh the cached user snapshot.
     func refresh() async {
         guard let session = Settings.shared.sessionToken else {
             signOut()
@@ -54,7 +64,6 @@ final class AuthStore: ObservableObject {
         } catch APIError.invalidSession {
             signOut()
         } catch {
-            // Transient — keep the last-known user.
             NSLog("Talkies me refresh failed: \(error)")
         }
     }
@@ -63,5 +72,6 @@ final class AuthStore: ObservableObject {
         Settings.shared.setSessionToken(nil)
         currentUser = nil
         isSignedIn = false
+        lastError = nil
     }
 }

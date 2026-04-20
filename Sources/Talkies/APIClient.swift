@@ -2,7 +2,7 @@ import Foundation
 
 struct PublicUser: Codable, Equatable {
     let id: String
-    let email: String?
+    let email: String
     let name: String?
     let plan: String
     let weekWords: Int
@@ -15,6 +15,11 @@ enum APIError: Error, LocalizedError {
     case notSignedIn
     case invalidSession
     case weeklyLimitReached(limit: Int, used: Int)
+    case rateLimited(retryAfter: Int)
+    case invalidCode
+    case codeExpired
+    case tooManyAttempts
+    case noCode
     case upstream(String)
     case transport(Error)
     case http(Int, String)
@@ -26,6 +31,12 @@ enum APIError: Error, LocalizedError {
         case .invalidSession: "Your session has expired. Please sign in again."
         case .weeklyLimitReached(let limit, let used):
             "Weekly limit reached (\(used)/\(limit) words). Upgrade to Pro for unlimited."
+        case .rateLimited(let retryAfter):
+            "Please wait \(retryAfter) seconds before requesting another code."
+        case .invalidCode: "That code isn't right."
+        case .codeExpired: "That code has expired. Request a new one."
+        case .tooManyAttempts: "Too many attempts. Request a new code."
+        case .noCode: "No code was sent to that email recently."
         case .upstream(let detail): "Upstream error: \(detail)"
         case .transport(let err): "Network error: \(err.localizedDescription)"
         case .http(let code, let detail): "HTTP \(code): \(detail)"
@@ -38,8 +49,6 @@ enum APIError: Error, LocalizedError {
 final class APIClient {
     static let shared = APIClient()
 
-    /// Production Worker URL. Override at runtime for dev by setting a custom
-    /// `APIBaseURLOverride` in UserDefaults.
     static let defaultBaseURL = URL(string: "https://talkies-api.pat-barlow.workers.dev")!
 
     private var baseURL: URL {
@@ -52,24 +61,43 @@ final class APIClient {
 
     private init() {}
 
-    // MARK: - Auth
+    // MARK: - Email auth
+
+    func requestEmailCode(email: String) async throws {
+        let body = try JSONSerialization.data(withJSONObject: ["email": email])
+        let (data, status) = try await post(path: "/auth/email/start", body: body, session: nil)
+
+        if status == 429 {
+            struct RL: Decodable { let retry_after: Int? }
+            let retry = (try? JSONDecoder().decode(RL.self, from: data))?.retry_after ?? 30
+            throw APIError.rateLimited(retryAfter: retry)
+        }
+        guard status == 200 else {
+            throw APIError.http(status, String(data: data, encoding: .utf8) ?? "")
+        }
+    }
 
     struct AuthResponse: Decodable {
         let session: String
         let user: PublicUser
     }
 
-    func authenticateWithApple(
-        identityToken: String,
-        email: String?,
-        fullName: String?
-    ) async throws -> AuthResponse {
-        var payload: [String: String] = ["identityToken": identityToken]
-        if let email { payload["email"] = email }
-        if let fullName { payload["fullName"] = fullName }
-
+    func verifyEmailCode(email: String, code: String, fullName: String?) async throws -> AuthResponse {
+        var payload: [String: String] = ["email": email, "code": code]
+        if let fullName, !fullName.isEmpty { payload["fullName"] = fullName }
         let body = try JSONSerialization.data(withJSONObject: payload)
-        let (data, status) = try await post(path: "/auth/apple", body: body, session: nil)
+        let (data, status) = try await post(path: "/auth/email/verify", body: body, session: nil)
+
+        if status == 400 {
+            struct Err: Decodable { let error: String? }
+            switch (try? JSONDecoder().decode(Err.self, from: data))?.error {
+            case "invalid_code":       throw APIError.invalidCode
+            case "code_expired":       throw APIError.codeExpired
+            case "too_many_attempts":  throw APIError.tooManyAttempts
+            case "no_code":            throw APIError.noCode
+            default: throw APIError.http(status, String(data: data, encoding: .utf8) ?? "")
+            }
+        }
         guard status == 200 else {
             throw APIError.http(status, String(data: data, encoding: .utf8) ?? "")
         }

@@ -32,9 +32,7 @@ struct AccountPane: View {
                 if let name = user.name, !name.isEmpty {
                     Text(name).font(.headline)
                 }
-                if let email = user.email {
-                    Text(email).font(.callout).foregroundStyle(.secondary)
-                }
+                Text(user.email).font(.callout).foregroundStyle(.secondary)
             }
             Spacer()
             planBadge(user.plan)
