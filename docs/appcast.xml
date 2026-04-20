@@ -5,6 +5,14 @@
         <link>https://patbarlow.github.io/talkies/appcast.xml</link>
         <description>Most recent updates to Yap</description>
         <language>en</language>
+        <item>
+            <title>Version 0.1.0</title>
+            <pubDate>Mon, 20 Apr 2026 12:27:11 +0000</pubDate>
+            <sparkle:version>16</sparkle:version>
+            <sparkle:shortVersionString>0.1.0</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <enclosure url="https://github.com/patbarlow/talkies/releases/download/v0.1.0/Yap-0.1.0.zip" sparkle:edSignature="Apwb2pvKAJbJsD4dZ11jx09fCPpylacGUosXIjyDZqJbWiou/pKSooXsjJJ/2Hjeg2reb+ENK6l+DCVeK92eDg==" length="1844796" type="application/octet-stream" />
+        </item>
         <!-- RELEASES_INSERT_HERE -->
     </channel>
 </rss>
