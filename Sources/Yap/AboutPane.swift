@@ -13,7 +13,7 @@ struct AboutPane: View {
                 iconScale: 0.55
             )
 
-            Text("Talkies")
+            Text("Yap")
                 .font(.system(size: 32, weight: .bold, design: .rounded))
 
             Text("Version \(version) · Build \(build)")

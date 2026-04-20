@@ -1,22 +1,22 @@
 #!/bin/bash
-# Build Talkies and package it into a proper .app bundle.
+# Build Yap and package it into a proper .app bundle.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
 ARCH="$(uname -m)"
-BIN_PATH=".build/${ARCH}-apple-macosx/release/Talkies"
+BIN_PATH=".build/${ARCH}-apple-macosx/release/Yap"
 
 echo "==> Building release binary ($ARCH)..."
 swift build -c release --arch "$ARCH"
 
-APP="build/Talkies.app"
+APP="build/Yap.app"
 echo "==> Assembling bundle at $APP"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS"
 mkdir -p "$APP/Contents/Resources"
 
-cp "$BIN_PATH" "$APP/Contents/MacOS/Talkies"
+cp "$BIN_PATH" "$APP/Contents/MacOS/Yap"
 cp "Resources/Info.plist" "$APP/Contents/Info.plist"
 
 if [[ -f "Resources/AppIcon.icns" ]]; then
@@ -33,7 +33,7 @@ SIGN_ID="${SIGN_ID:-Developer ID Application: Pat Barlow (T544U3WVL6)}"
 echo "==> Signing with: $SIGN_ID"
 codesign --force --deep \
     --sign "$SIGN_ID" \
-    --entitlements "Resources/Talkies.entitlements" \
+    --entitlements "Resources/Yap.entitlements" \
     --options runtime \
     "$APP"
 

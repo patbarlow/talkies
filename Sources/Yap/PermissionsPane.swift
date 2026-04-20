@@ -12,7 +12,7 @@ struct PermissionsPane: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text("Permissions")
                     .font(.title2.bold())
-                Text("Talkies needs two things to work. Audio and transcripts never leave your Mac until you hold the push-to-talk key.")
+                Text("Yap needs two things to work. Audio and transcripts never leave your Mac until you hold the push-to-talk key.")
                     .foregroundStyle(.secondary)
                     .font(.callout)
             }

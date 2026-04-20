@@ -93,7 +93,7 @@ struct SettingsView: View {
                     row(.keys)
                 }
 
-                Section("Talkies") {
+                Section("Yap") {
                     row(.about)
                 }
             }
@@ -183,7 +183,7 @@ struct HomePane: View {
                 ChecklistRow(
                     symbol: "book",
                     title: "Add vocabulary",
-                    subtitle: "Teach Talkies names, jargon, or product terms."
+                    subtitle: "Teach Yap names, jargon, or product terms."
                 )
             }
 
@@ -309,7 +309,7 @@ struct KeysPane: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Keys are stored in macOS Keychain under `app.talkies.Talkies`.")
+            Text("Keys are stored in macOS Keychain under `app.yap.Yap`.")
                 .foregroundStyle(.secondary)
                 .font(.callout)
 

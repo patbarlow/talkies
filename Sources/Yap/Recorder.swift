@@ -11,7 +11,7 @@ final class Recorder {
         let sourceFormat = input.outputFormat(forBus: 0)
 
         let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("talkies-\(UUID().uuidString).wav")
+            .appendingPathComponent("yap-\(UUID().uuidString).wav")
         outputURL = url
 
         let fileSettings: [String: Any] = [

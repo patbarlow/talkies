@@ -1,7 +1,7 @@
 import AppKit
 
 @main
-enum TalkiesApp {
+enum YapApp {
     @MainActor
     static func main() {
         let app = NSApplication.shared

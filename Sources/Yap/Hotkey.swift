@@ -116,7 +116,7 @@ final class Hotkey {
 
             if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
                 if let tap = me.eventTap { CGEvent.tapEnable(tap: tap, enable: true) }
-                NSLog("Talkies: event tap re-enabled after being disabled by system")
+                NSLog("Yap: event tap re-enabled after being disabled by system")
                 return Unmanaged.passUnretained(event)
             }
 
@@ -131,14 +131,14 @@ final class Hotkey {
             callback: callback,
             userInfo: Unmanaged.passUnretained(self).toOpaque()
         ) else {
-            NSLog("Talkies: CGEvent.tapCreate returned nil — Accessibility permission likely not granted yet.")
+            NSLog("Yap: CGEvent.tapCreate returned nil — Accessibility permission likely not granted yet.")
             return false
         }
         eventTap = tap
         runLoopSource = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0)
         CFRunLoopAddSource(CFRunLoopGetMain(), runLoopSource, .commonModes)
         CGEvent.tapEnable(tap: tap, enable: true)
-        NSLog("Talkies: event tap installed for \(spec.label) (kind=\(spec.kind.rawValue), keyCode=\(spec.keyCode))")
+        NSLog("Yap: event tap installed for \(spec.label) (kind=\(spec.kind.rawValue), keyCode=\(spec.keyCode))")
         return true
     }
 

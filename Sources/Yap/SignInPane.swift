@@ -25,7 +25,7 @@ struct SignInPane: View {
             )
 
             VStack(spacing: 6) {
-                Text("Welcome to Talkies")
+                Text("Welcome to Yap")
                     .font(.system(size: 26, weight: .bold, design: .rounded))
                 Text(headline)
                     .font(.callout)

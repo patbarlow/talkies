@@ -31,7 +31,7 @@ final class AuthStore: ObservableObject {
         }
     }
 
-    /// Exchange `email` + `code` for a Talkies session.
+    /// Exchange `email` + `code` for a Yap session.
     func verify(email: String, code: String, fullName: String?) async -> Bool {
         isWorking = true
         lastError = nil
@@ -64,7 +64,7 @@ final class AuthStore: ObservableObject {
         } catch APIError.invalidSession {
             signOut()
         } catch {
-            NSLog("Talkies me refresh failed: \(error)")
+            NSLog("Yap me refresh failed: \(error)")
         }
     }
 

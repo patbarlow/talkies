@@ -3,7 +3,7 @@ import Security
 import SwiftUI
 
 extension Notification.Name {
-    static let talkiesHotkeyChanged = Notification.Name("TalkiesHotkeyChanged")
+    static let yapHotkeyChanged = Notification.Name("YapHotkeyChanged")
 }
 
 @MainActor
@@ -28,7 +28,7 @@ final class Settings: ObservableObject {
             if let data = try? JSONEncoder().encode(hotkey) {
                 UserDefaults.standard.set(data, forKey: "hotkey")
             }
-            NotificationCenter.default.post(name: .talkiesHotkeyChanged, object: hotkey)
+            NotificationCenter.default.post(name: .yapHotkeyChanged, object: hotkey)
         }
     }
 
@@ -65,7 +65,7 @@ final class Settings: ObservableObject {
 }
 
 enum Keychain {
-    private static let service = "app.talkies.Talkies"
+    private static let service = "app.yap.Yap"
 
     static func read(_ account: String) -> String? {
         let query: [CFString: Any] = [

@@ -2,12 +2,12 @@
 import PackageDescription
 
 let package = Package(
-    name: "Talkies",
+    name: "Yap",
     platforms: [.macOS(.v14)],
     targets: [
         .executableTarget(
-            name: "Talkies",
-            path: "Sources/Talkies"
+            name: "Yap",
+            path: "Sources/Yap"
         )
     ]
 )

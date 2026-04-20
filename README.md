@@ -1,4 +1,4 @@
-# Talkies
+# Yap
 
 A push-to-talk dictation app for macOS. Hold a hotkey, speak, release — cleaned-up text is pasted into whatever you're focused on.
 
@@ -12,10 +12,10 @@ Rough feature parity with Superwhisper / Wispr Flow, minus the polish. BYO API k
 | Cleanup (optional) | Anthropic `claude-haiku-4-5` | Best at the constrained "rewrite but don't embellish" task; fractions of a cent per utterance |
 | Hotkey | `CGEventTap` (keys + modifier-only) | Works in every app, can swallow the key; handles Right ⌘ / fn / etc. |
 | Insertion | Clipboard + synthesized ⌘V | Works in Electron apps where Accessibility insertion fails |
-| Keys | macOS Keychain (`app.talkies.Talkies`) | Never touches disk in plaintext |
-| Library | JSON at `~/Library/Application Support/Talkies/library.json` | Simple, inspectable, encrypts at rest via FileVault |
+| Keys | macOS Keychain (`app.yap.Yap`) | Never touches disk in plaintext |
+| Library | JSON at `~/Library/Application Support/Yap/library.json` | Simple, inspectable, encrypts at rest via FileVault |
 
-Swap the transcription provider by editing `Sources/Talkies/Transcriber.swift`; same for cleanup in `Cleaner.swift`.
+Swap the transcription provider by editing `Sources/Yap/Transcriber.swift`; same for cleanup in `Cleaner.swift`.
 
 ## Build
 
@@ -23,12 +23,12 @@ Requirements: macOS 14+, Xcode command-line tools.
 
 ```bash
 ./Scripts/bundle.sh
-open build/Talkies.app
+open build/Yap.app
 ```
 
 Ad-hoc signing by default. For distribution, swap the signing identity in `bundle.sh` to a Developer ID and pipe through `xcrun notarytool`.
 
-On first launch Talkies opens Settings → Permissions. Grant Microphone and Accessibility. Accessibility is required for the global hotkey and for synthesizing ⌘V — without it nothing works.
+On first launch Yap opens Settings → Permissions. Grant Microphone and Accessibility. Accessibility is required for the global hotkey and for synthesizing ⌘V — without it nothing works.
 
 ## Configure
 
@@ -60,7 +60,7 @@ Pressing any other key while holding a modifier-only hotkey cancels the recordin
 
 ```
 Package.swift
-Sources/Talkies/
+Sources/Yap/
   Entry.swift               # NSApplication entry point
   AppDelegate.swift         # Menu bar, pipeline, settings window, activation policy
   Hotkey.swift              # CGEventTap (keys + modifier-only)
@@ -81,7 +81,7 @@ Sources/Talkies/
   AboutPane.swift           # App info pane
 Resources/
   Info.plist
-  Talkies.entitlements      # Mic + network. Not sandboxed (needed for cross-app events).
+  Yap.entitlements      # Mic + network. Not sandboxed (needed for cross-app events).
 Scripts/
   bundle.sh                 # swift build → .app → codesign
 ```

@@ -1,4 +1,4 @@
--- Talkies API schema. Apply via `npm run db:migrate[:remote]`.
+-- Yap API schema. Apply via `npm run db:migrate[:remote]`.
 --
 -- NOTE: This rewrites the schema since the auth model changed from Apple sub
 -- to email magic link. If you've already run the Apple-based schema, the DROP

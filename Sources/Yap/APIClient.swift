@@ -27,7 +27,7 @@ enum APIError: Error, LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .notSignedIn: "Not signed in to Talkies."
+        case .notSignedIn: "Not signed in to Yap."
         case .invalidSession: "Your session has expired. Please sign in again."
         case .weeklyLimitReached(let limit, let used):
             "Weekly limit reached (\(used)/\(limit) words). Upgrade to Pro for unlimited."
@@ -135,7 +135,7 @@ final class APIClient {
         prompt: String?,
         session: String
     ) async throws -> TranscribeResponse {
-        let boundary = "Talkies-\(UUID().uuidString)"
+        let boundary = "Yap-\(UUID().uuidString)"
         var body = Data()
         let audioData = try Data(contentsOf: audio)
         body.appendFile(boundary: boundary, name: "audio", filename: "audio.wav", contentType: "audio/wav", data: audioData)

@@ -21,10 +21,10 @@ export async function sendCodeEmail(
   to: string,
   code: string,
 ): Promise<void> {
-  const from = env.RESEND_FROM ?? "Talkies <onboarding@resend.dev>";
-  const subject = "Your Talkies sign-in code";
+  const from = env.RESEND_FROM ?? "Yap <onboarding@resend.dev>";
+  const subject = "Your Yap sign-in code";
   const text =
-    `Your Talkies sign-in code is: ${code}\n\n` +
+    `Your Yap sign-in code is: ${code}\n\n` +
     `It expires in 10 minutes. If you didn't request this, you can safely ignore this email.`;
 
   const res = await fetch("https://api.resend.com/emails", {

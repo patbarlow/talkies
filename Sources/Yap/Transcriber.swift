@@ -35,7 +35,7 @@ final class Transcriber {
             throw TranscriberError.missingCredentials
         }
 
-        let boundary = "Talkies-\(UUID().uuidString)"
+        let boundary = "Yap-\(UUID().uuidString)"
         var request = URLRequest(url: groqEndpoint)
         request.httpMethod = "POST"
         request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")

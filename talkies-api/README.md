@@ -1,6 +1,6 @@
-# Talkies API
+# Yap API
 
-Cloudflare Worker + D1 backing Talkies. Email magic-link auth, session JWTs, transcription proxy (Groq Whisper), cleanup proxy (Claude Haiku), weekly word limit for free users, Stripe Checkout + webhook for Pro plans.
+Cloudflare Worker + D1 backing Yap. Email magic-link auth, session JWTs, transcription proxy (Groq Whisper), cleanup proxy (Claude Haiku), weekly word limit for free users, Stripe Checkout + webhook for Pro plans.
 
 ## One-time setup
 
@@ -36,9 +36,9 @@ Sign-in codes go out through [Resend](https://resend.com).
 
 1. Sign up, grab an API key from the Resend dashboard → `wrangler secret put RESEND_API_KEY`.
 2. **For initial dev:** the default from-address is `onboarding@resend.dev`. Resend restricts this address to only delivering to email addresses you've verified on your Resend account — fine for testing with your own inbox.
-3. **For production:** add and verify `talkies.app` (or whatever domain you own) in the Resend dashboard. Then set `RESEND_FROM` so codes come from your address:
+3. **For production:** add and verify `yap.app` (or whatever domain you own) in the Resend dashboard. Then set `RESEND_FROM` so codes come from your address:
    ```bash
-   npx wrangler secret put RESEND_FROM    # e.g. Talkies <login@talkies.app>
+   npx wrangler secret put RESEND_FROM    # e.g. Yap <login@yap.app>
    ```
    (Or set it in `wrangler.toml` vars — it's not secret.)
 

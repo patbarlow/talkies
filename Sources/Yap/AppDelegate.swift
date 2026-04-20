@@ -26,7 +26,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         refreshStatus()
 
         NotificationCenter.default.addObserver(
-            forName: .talkiesHotkeyChanged,
+            forName: .yapHotkeyChanged,
             object: nil,
             queue: .main
         ) { [weak self] note in
@@ -60,11 +60,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // App menu — macOS draws the app name as the title of the first submenu.
         let appItem = NSMenuItem()
         main.addItem(appItem)
-        let appMenu = NSMenu(title: "Talkies")
+        let appMenu = NSMenu(title: "Yap")
         appItem.submenu = appMenu
 
         appMenu.addItem(NSMenuItem(
-            title: "About Talkies",
+            title: "About Yap",
             action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)),
             keyEquivalent: ""
         ))
@@ -78,7 +78,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         appMenu.addItem(settings)
         appMenu.addItem(.separator())
         appMenu.addItem(NSMenuItem(
-            title: "Hide Talkies",
+            title: "Hide Yap",
             action: #selector(NSApplication.hide(_:)),
             keyEquivalent: "h"
         ))
@@ -96,7 +96,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         ))
         appMenu.addItem(.separator())
         appMenu.addItem(NSMenuItem(
-            title: "Quit Talkies",
+            title: "Quit Yap",
             action: #selector(NSApplication.terminate(_:)),
             keyEquivalent: "q"
         ))
@@ -171,13 +171,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(settings)
 
         menu.addItem(.separator())
-        menu.addItem(NSMenuItem(title: "Quit Talkies", action: #selector(NSApp.terminate(_:)), keyEquivalent: "q"))
+        menu.addItem(NSMenuItem(title: "Quit Yap", action: #selector(NSApp.terminate(_:)), keyEquivalent: "q"))
 
         statusItem.menu = menu
     }
 
     private func setIdleIcon() {
-        statusItem.button?.image = NSImage(systemSymbolName: "mic", accessibilityDescription: "Talkies")
+        statusItem.button?.image = NSImage(systemSymbolName: "mic", accessibilityDescription: "Yap")
     }
 
     private func setRecordingIcon() {
@@ -215,15 +215,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func installHotkey() {
         let hk = hotkey ?? Hotkey(spec: Settings.shared.hotkey)
         hk.onPress = { [weak self] in
-            NSLog("Talkies: hotkey pressed")
+            NSLog("Yap: hotkey pressed")
             self?.startRecording()
         }
         hk.onRelease = { [weak self] in
-            NSLog("Talkies: hotkey released")
+            NSLog("Yap: hotkey released")
             Task { await self?.stopAndProcess() }
         }
         hk.onCancel = { [weak self] in
-            NSLog("Talkies: hotkey cancelled (other key pressed)")
+            NSLog("Yap: hotkey cancelled (other key pressed)")
             self?.cancelRecording()
         }
         hotkey = hk
@@ -243,7 +243,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 guard let self, let hk = self.hotkey else { t.invalidate(); return }
                 guard AXIsProcessTrusted() else { return }
                 if hk.install() {
-                    NSLog("Talkies: event tap installed after retry")
+                    NSLog("Yap: event tap installed after retry")
                     t.invalidate()
                     self.retryTimer = nil
                     self.refreshStatus()
@@ -272,7 +272,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             setRecordingIcon()
             FloatingOverlay.shared.show(.recording)
         } catch {
-            NSLog("Talkies record error: \(error)")
+            NSLog("Yap record error: \(error)")
         }
     }
 
@@ -310,7 +310,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 bundleID: target?.bundleIdentifier
             )
         } catch {
-            NSLog("Talkies pipeline error: \(error)")
+            NSLog("Yap pipeline error: \(error)")
         }
         FloatingOverlay.shared.show(.hidden)
     }
@@ -321,7 +321,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if settingsWindow == nil {
             let vc = NSHostingController(rootView: SettingsView())
             let window = NSWindow(contentViewController: vc)
-            window.title = "Talkies"
+            window.title = "Yap"
             window.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
             window.titleVisibility = .hidden
             window.titlebarAppearsTransparent = true

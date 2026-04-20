@@ -29,7 +29,7 @@ final class Library: ObservableObject {
             appropriateFor: nil,
             create: true
         )) ?? fm.temporaryDirectory
-        let dir = base.appendingPathComponent("Talkies", isDirectory: true)
+        let dir = base.appendingPathComponent("Yap", isDirectory: true)
         try? fm.createDirectory(at: dir, withIntermediateDirectories: true)
         fileURL = dir.appendingPathComponent("library.json")
         load()
