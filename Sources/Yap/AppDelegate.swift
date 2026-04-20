@@ -22,9 +22,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.mainMenu = buildAppMenu()
         buildMenuBar()
-        installHotkey()
         refreshStatus()
 
+        // Hotkey spec rebinding
         NotificationCenter.default.addObserver(
             forName: .yapHotkeyChanged,
             object: nil,
@@ -37,19 +37,51 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
 
-        // First-launch or no session: open Settings so the user can sign in and
-        // grant permissions. The view auto-swaps to the sign-in pane when there's
-        // no session, and we jump to Permissions otherwise.
-        let firstLaunch = !UserDefaults.standard.bool(forKey: "hasLaunchedBefore")
-        UserDefaults.standard.set(true, forKey: "hasLaunchedBefore")
-        if firstLaunch || Settings.shared.sessionToken == nil {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
-                if Settings.shared.sessionToken != nil {
-                    SettingsRouter.shared.selection = .permissions
-                }
-                self?.openSettings()
-            }
+        // Auth or Accessibility state changed → re-evaluate what to do.
+        NotificationCenter.default.addObserver(
+            forName: .yapAuthStateChanged, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.reconcile() }
         }
+        NotificationCenter.default.addObserver(
+            forName: .yapAccessibilityChanged, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.reconcile() }
+        }
+
+        UserDefaults.standard.set(true, forKey: "hasLaunchedBefore")
+        // Settle a moment so the menu-bar icon draws first, then reconcile.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
+            self?.reconcile()
+        }
+    }
+
+    /// Decide what to do based on current auth + permissions state.
+    /// - Not authenticated: don't touch the hotkey, don't trigger any OS
+    ///   prompts; open Settings so the user sees the sign-in pane.
+    /// - Authenticated + Accessibility granted: install the hotkey.
+    /// - Authenticated + Accessibility missing: open Settings and navigate
+    ///   to Permissions so the user can explicitly click Allow.
+    private func reconcile() {
+        let isAuthed = AuthStore.shared.isSignedIn || Settings.shared.hasSkippedSignIn
+
+        guard isAuthed else {
+            hotkey?.uninstall()
+            hotkey = nil
+            retryTimer?.invalidate()
+            retryTimer = nil
+            if !(settingsWindow?.isVisible ?? false) { openSettings() }
+            refreshStatus()
+            return
+        }
+
+        if AXIsProcessTrusted() {
+            if hotkey == nil { installHotkey() }
+        } else {
+            SettingsRouter.shared.selection = .permissions
+            if !(settingsWindow?.isVisible ?? false) { openSettings() }
+        }
+        refreshStatus()
     }
 
     // MARK: - App menu (top-of-screen menu bar when .regular)

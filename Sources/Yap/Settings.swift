@@ -4,6 +4,8 @@ import SwiftUI
 
 extension Notification.Name {
     static let yapHotkeyChanged = Notification.Name("YapHotkeyChanged")
+    static let yapAuthStateChanged = Notification.Name("YapAuthStateChanged")
+    static let yapAccessibilityChanged = Notification.Name("YapAccessibilityChanged")
 }
 
 @MainActor
@@ -18,7 +20,10 @@ final class Settings: ObservableObject {
         didSet { UserDefaults.standard.set(cleanupEnabled, forKey: "cleanupEnabled") }
     }
     @Published var hasSkippedSignIn: Bool {
-        didSet { UserDefaults.standard.set(hasSkippedSignIn, forKey: "hasSkippedSignIn") }
+        didSet {
+            UserDefaults.standard.set(hasSkippedSignIn, forKey: "hasSkippedSignIn")
+            NotificationCenter.default.post(name: .yapAuthStateChanged, object: nil)
+        }
     }
     @Published var customVocabulary: String? {
         didSet { UserDefaults.standard.set(customVocabulary, forKey: "customVocabulary") }
