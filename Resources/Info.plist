@@ -35,7 +35,7 @@
     <key>SUFeedURL</key>
     <string>https://patbarlow.github.io/talkies/appcast.xml</string>
     <key>SUPublicEDKey</key>
-    <string>REPLACE_ME_WITH_OUTPUT_OF_generate_keys</string>
+    <string>DXaM+fPfK1BV4Q2ZFL72kY2QAEkgduZvo+77jYb5Dnk=</string>
     <key>SUEnableAutomaticChecks</key>
     <true/>
     <key>SUScheduledCheckInterval</key>

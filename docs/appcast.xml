@@ -1,0 +1,10 @@
+<?xml version="1.0" standalone="yes"?>
+<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0">
+    <channel>
+        <title>Yap</title>
+        <link>https://patbarlow.github.io/talkies/appcast.xml</link>
+        <description>Most recent updates to Yap</description>
+        <language>en</language>
+        <!-- RELEASES_INSERT_HERE -->
+    </channel>
+</rss>
