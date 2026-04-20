@@ -367,14 +367,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let vc = NSHostingController(rootView: SettingsView())
             let window = NSWindow(contentViewController: vc)
             window.title = "Yap"
-            window.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
+            window.styleMask = [.titled, .closable, .miniaturizable, .fullSizeContentView]
             window.titleVisibility = .hidden
             window.titlebarAppearsTransparent = true
             window.isMovableByWindowBackground = true
             window.toolbarStyle = .unifiedCompact
             window.isReleasedWhenClosed = false
-            window.setContentSize(NSSize(width: 860, height: 600))
-            window.minSize = NSSize(width: 760, height: 520)
+            window.setContentSize(NSSize(width: 860, height: 580))
             window.center()
             window.delegate = self
             settingsWindow = window

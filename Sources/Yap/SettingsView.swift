@@ -64,43 +64,95 @@ struct SettingsView: View {
             if !auth.isSignedIn {
                 SignInPane()
             } else {
-                splitView
+                mainLayout
             }
         }
-        .frame(minWidth: 820, minHeight: 560)
+        .frame(width: 860, height: 580)
         .tint(.mint)
     }
 
-    private var splitView: some View {
-        NavigationSplitView {
-            List(selection: $router.selection) {
-                row(.home)
-                row(.library)
+    // Manual HStack layout rather than NavigationSplitView. NavigationSplitView
+    // always applies a translucent sidebar material + a resizable splitter —
+    // neither of which we want. This gives us a flat sidebar flush with the
+    // window edge, fixed width, no splitter.
+    private var mainLayout: some View {
+        HStack(spacing: 0) {
+            sidebar
+                .frame(width: 220)
+                .frame(maxHeight: .infinity)
+                .background(Color(nsColor: .windowBackgroundColor))
 
-                Section("Dictation") {
-                    row(.hotkey)
-                    row(.cleanup)
-                    row(.vocabulary)
-                }
+            Divider()
 
-                Section("Setup") {
-                    row(.account)
-                    row(.permissions)
-                }
+            detail
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(Color(nsColor: .underPageBackgroundColor))
+        }
+    }
 
-                Section("Yap") {
-                    row(.about)
-                }
+    @ViewBuilder
+    private var sidebar: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 1) {
+                sidebarRow(.home)
+                sidebarRow(.library)
+
+                sectionHeader("Dictation")
+                sidebarRow(.hotkey)
+                sidebarRow(.cleanup)
+                sidebarRow(.vocabulary)
+
+                sectionHeader("Setup")
+                sidebarRow(.account)
+                sidebarRow(.permissions)
+
+                sectionHeader("Yap")
+                sidebarRow(.about)
             }
-            .listStyle(.sidebar)
-            .scrollContentBackground(.hidden)
-            .background(Color(nsColor: .windowBackgroundColor))
-            // Fixed sidebar — same min/ideal/max locks the width so the user
-            // can't resize it, matching the reference design.
-            .navigationSplitViewColumnWidth(200)
-            .toolbar(removing: .sidebarToggle)
-        } detail: {
-            ScrollView {
+            .padding(.vertical, 14)
+        }
+        .scrollIndicators(.hidden)
+    }
+
+    private func sidebarRow(_ pane: Pane) -> some View {
+        let selected = router.selection == pane
+        return Button {
+            router.selection = pane
+        } label: {
+            HStack(spacing: 10) {
+                IconTile(systemName: pane.systemIcon, gradient: pane.tile, size: 22)
+                Text(pane.title)
+                    .foregroundStyle(selected ? Color.white : Color.primary)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
+            .background(
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(selected ? Color.accentColor : Color.clear)
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .padding(.horizontal, 10)
+    }
+
+    private func sectionHeader(_ title: String) -> some View {
+        Text(title)
+            .font(.caption.weight(.medium))
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 20)
+            .padding(.top, 14)
+            .padding(.bottom, 2)
+    }
+
+    private var detail: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                Text(router.selection.title)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(.secondary)
+
                 Group {
                     switch router.selection {
                     case .home: HomePane()
@@ -113,21 +165,10 @@ struct SettingsView: View {
                     case .about: AboutPane()
                     }
                 }
-                .padding(24)
             }
-            .background(Color(nsColor: .underPageBackgroundColor))
-            .navigationTitle(router.selection.title)
+            .padding(24)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .navigationSplitViewStyle(.balanced)
-    }
-
-    private func row(_ pane: Pane) -> some View {
-        Label {
-            Text(pane.title)
-        } icon: {
-            IconTile(systemName: pane.systemIcon, gradient: pane.tile)
-        }
-        .tag(pane)
     }
 }
 

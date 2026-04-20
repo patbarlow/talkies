@@ -45,8 +45,8 @@ struct AccountPane: View {
             planBadge(user.plan)
         }
         .padding(18)
-        .background(RoundedRectangle(cornerRadius: 14).fill(Color.white))
-        .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.black.opacity(0.06)))
+        .background(RoundedRectangle(cornerRadius: 14).fill(Color(nsColor: .controlBackgroundColor)))
+        .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.primary.opacity(0.08)))
 
         // Usage card
         VStack(alignment: .leading, spacing: 12) {
@@ -69,8 +69,8 @@ struct AccountPane: View {
                 .font(.caption).foregroundStyle(.secondary)
         }
         .padding(18)
-        .background(RoundedRectangle(cornerRadius: 14).fill(Color.white))
-        .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.black.opacity(0.06)))
+        .background(RoundedRectangle(cornerRadius: 14).fill(Color(nsColor: .controlBackgroundColor)))
+        .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.primary.opacity(0.08)))
 
         // Upgrade card — shown only on free plan
         if user.plan == "free" {
