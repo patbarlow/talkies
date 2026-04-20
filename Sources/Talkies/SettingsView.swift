@@ -10,6 +10,7 @@ final class SettingsRouter: ObservableObject {
 struct SettingsView: View {
     @StateObject private var router = SettingsRouter.shared
     @StateObject private var auth = AuthStore.shared
+    @StateObject private var settings = Settings.shared
 
     enum Pane: String, Hashable, CaseIterable, Identifiable {
         case home, library
@@ -64,7 +65,7 @@ struct SettingsView: View {
 
     var body: some View {
         Group {
-            if !auth.isSignedIn {
+            if !auth.isSignedIn && !settings.hasSkippedSignIn {
                 SignInPane()
             } else {
                 splitView

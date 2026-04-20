@@ -5,5 +5,9 @@ build/
 DerivedData/
 .DS_Store
 
+# Provisioning profiles — pulled per-developer from developer.apple.com
+Resources/embedded.provisionprofile
+Resources/*.provisionprofile
+
 # Claude Code per-user permission overrides
 .claude/settings.local.json

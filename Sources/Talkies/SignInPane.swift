@@ -3,6 +3,7 @@ import SwiftUI
 
 struct SignInPane: View {
     @StateObject private var auth = AuthStore.shared
+    @StateObject private var settings = Settings.shared
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
@@ -36,6 +37,13 @@ struct SignInPane: View {
             .signInWithAppleButtonStyle(colorScheme == .dark ? .white : .black)
             .frame(width: 280, height: 44)
             .disabled(auth.isAuthenticating)
+
+            Button("Use my own API keys →") {
+                settings.hasSkippedSignIn = true
+            }
+            .buttonStyle(.borderless)
+            .font(.callout)
+            .foregroundStyle(.secondary)
 
             if let err = auth.lastError {
                 Text(err)

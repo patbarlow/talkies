@@ -27,13 +27,33 @@ else
 fi
 
 # Signing identity: Developer ID Application tied to team T544U3WVL6.
-# Required so restricted entitlements (Sign in with Apple) aren't stripped.
 # Override via env: `SIGN_ID="Apple Development: ..."  ./Scripts/bundle.sh`
 SIGN_ID="${SIGN_ID:-Developer ID Application: Pat Barlow (T544U3WVL6)}"
+
+# If we have a provisioning profile, embed it and sign with the full
+# entitlements (including com.apple.developer.applesignin, which is a
+# restricted entitlement that requires a profile to be launchable).
+# Without a profile, strip the restricted entitlement — the app will launch
+# and work for everything except Sign in with Apple.
+PROFILE="Resources/embedded.provisionprofile"
+ENTITLEMENTS="Resources/Talkies.entitlements"
+
+if [[ -f "$PROFILE" ]]; then
+    echo "==> Embedding provisioning profile"
+    cp "$PROFILE" "$APP/Contents/embedded.provisionprofile"
+    SIGN_ENTITLEMENTS="$ENTITLEMENTS"
+else
+    echo "⚠️  No $PROFILE — stripping Sign in with Apple entitlement."
+    echo "    See README for how to add one. App will launch, Sign in with Apple won't."
+    SIGN_ENTITLEMENTS="$(mktemp -t talkies-ent).plist"
+    cp "$ENTITLEMENTS" "$SIGN_ENTITLEMENTS"
+    /usr/libexec/PlistBuddy -c "Delete :com.apple.developer.applesignin" "$SIGN_ENTITLEMENTS" 2>/dev/null || true
+fi
+
 echo "==> Signing with: $SIGN_ID"
 codesign --force --deep \
     --sign "$SIGN_ID" \
-    --entitlements "Resources/Talkies.entitlements" \
+    --entitlements "$SIGN_ENTITLEMENTS" \
     --options runtime \
     "$APP"
 

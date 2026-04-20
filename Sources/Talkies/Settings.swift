@@ -17,6 +17,9 @@ final class Settings: ObservableObject {
     @Published var cleanupEnabled: Bool {
         didSet { UserDefaults.standard.set(cleanupEnabled, forKey: "cleanupEnabled") }
     }
+    @Published var hasSkippedSignIn: Bool {
+        didSet { UserDefaults.standard.set(hasSkippedSignIn, forKey: "hasSkippedSignIn") }
+    }
     @Published var customVocabulary: String? {
         didSet { UserDefaults.standard.set(customVocabulary, forKey: "customVocabulary") }
     }
@@ -34,6 +37,7 @@ final class Settings: ObservableObject {
         self.anthropicKey = Keychain.read("anthropic")
         self.sessionToken = Keychain.read("session").flatMap { $0.isEmpty ? nil : $0 }
         self.cleanupEnabled = UserDefaults.standard.object(forKey: "cleanupEnabled") as? Bool ?? true
+        self.hasSkippedSignIn = UserDefaults.standard.bool(forKey: "hasSkippedSignIn")
         self.customVocabulary = UserDefaults.standard.string(forKey: "customVocabulary")
 
         if let data = UserDefaults.standard.data(forKey: "hotkey"),
