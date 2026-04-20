@@ -1,0 +1,27 @@
+name = "talkies-api"
+main = "src/index.ts"
+compatibility_date = "2024-12-01"
+compatibility_flags = ["nodejs_compat"]
+
+# Apple Sign In audience — must match the bundle ID that signs the iOS/macOS client.
+[vars]
+APPLE_BUNDLE_ID = "app.talkies.Talkies"
+
+# After running `npm run db:create`, paste the returned database_id below.
+[[d1_databases]]
+binding = "DB"
+database_name = "talkies"
+database_id = "REPLACE_WITH_DB_ID_FROM_WRANGLER_CREATE"
+
+# Secrets — set via `wrangler secret put <NAME>`, never committed:
+#   SESSION_SECRET          (run `openssl rand -hex 32`)
+#   GROQ_API_KEY
+#   ANTHROPIC_API_KEY
+#   STRIPE_SECRET_KEY
+#   STRIPE_WEBHOOK_SECRET
+#   STRIPE_PRICE_ID_PRO     (optional until you add paid plans)
+
+# Optional: custom route. Uncomment + add your zone after deploy works on workers.dev.
+# [[routes]]
+# pattern = "api.talkies.app/*"
+# zone_name = "talkies.app"
