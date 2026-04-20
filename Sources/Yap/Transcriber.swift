@@ -1,84 +1,25 @@
 import Foundation
 
 enum TranscriberError: Error {
-    case missingCredentials
-    case badResponse(Int, String)
+    case notSignedIn
 }
 
-/// Two modes:
-///   1. Signed-in — POSTs audio to our Worker, which proxies to Groq and
-///      enforces the weekly word limit.
-///   2. BYOK — if the user has set a Groq API key directly, goes straight to Groq.
+/// Transcription always goes through the Yap Worker. It proxies to Groq
+/// Whisper and enforces the weekly word limit for free users server-side.
 final class Transcriber {
     static let shared = Transcriber()
 
-    private let groqEndpoint = URL(string: "https://api.groq.com/openai/v1/audio/transcriptions")!
-    private let model = "whisper-large-v3-turbo"
-
     func transcribe(wavURL: URL) async throws -> String {
+        guard let session = await Settings.shared.sessionToken, !session.isEmpty else {
+            throw TranscriberError.notSignedIn
+        }
         let vocab = await Settings.shared.customVocabulary
-
-        // Prefer the signed-in path — enforces plan limits on the backend.
-        if let session = await Settings.shared.sessionToken, !session.isEmpty {
-            let result = try await APIClient.shared.transcribe(
-                audio: wavURL,
-                prompt: vocab,
-                session: session
-            )
-            // Best-effort usage refresh for the UI.
-            Task { await AuthStore.shared.refresh() }
-            return result.text
-        }
-
-        // BYOK fallback.
-        guard let key = await Settings.shared.groqKey, !key.isEmpty else {
-            throw TranscriberError.missingCredentials
-        }
-
-        let boundary = "Yap-\(UUID().uuidString)"
-        var request = URLRequest(url: groqEndpoint)
-        request.httpMethod = "POST"
-        request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
-        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
-
-        var body = Data()
-        body.appendField(boundary: boundary, name: "model", value: model)
-        body.appendField(boundary: boundary, name: "language", value: "en")
-        body.appendField(boundary: boundary, name: "response_format", value: "json")
-        body.appendField(boundary: boundary, name: "temperature", value: "0")
-        if let vocab, !vocab.isEmpty {
-            body.appendField(boundary: boundary, name: "prompt", value: vocab)
-        }
-        let audio = try Data(contentsOf: wavURL)
-        body.appendFile(boundary: boundary, name: "file", filename: "audio.wav", contentType: "audio/wav", data: audio)
-        body.appendString("--\(boundary)--\r\n")
-
-        let (data, response) = try await URLSession.shared.upload(for: request, from: body)
-        guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
-            let status = (response as? HTTPURLResponse)?.statusCode ?? -1
-            throw TranscriberError.badResponse(status, String(data: data, encoding: .utf8) ?? "")
-        }
-        struct Reply: Decodable { let text: String }
-        return try JSONDecoder().decode(Reply.self, from: data)
-            .text
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-}
-
-private extension Data {
-    mutating func appendString(_ s: String) {
-        if let d = s.data(using: .utf8) { append(d) }
-    }
-    mutating func appendField(boundary: String, name: String, value: String) {
-        appendString("--\(boundary)\r\n")
-        appendString("Content-Disposition: form-data; name=\"\(name)\"\r\n\r\n")
-        appendString("\(value)\r\n")
-    }
-    mutating func appendFile(boundary: String, name: String, filename: String, contentType: String, data: Data) {
-        appendString("--\(boundary)\r\n")
-        appendString("Content-Disposition: form-data; name=\"\(name)\"; filename=\"\(filename)\"\r\n")
-        appendString("Content-Type: \(contentType)\r\n\r\n")
-        append(data)
-        appendString("\r\n")
+        let result = try await APIClient.shared.transcribe(
+            audio: wavURL,
+            prompt: vocab,
+            session: session
+        )
+        Task { await AuthStore.shared.refresh() }
+        return result.text
     }
 }

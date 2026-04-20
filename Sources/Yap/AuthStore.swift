@@ -45,6 +45,7 @@ final class AuthStore: ObservableObject {
             Settings.shared.setSessionToken(result.session)
             currentUser = result.user
             isSignedIn = true
+            NotificationCenter.default.post(name: .yapAuthStateChanged, object: nil)
             return true
         } catch {
             lastError = error.localizedDescription
@@ -73,5 +74,18 @@ final class AuthStore: ObservableObject {
         currentUser = nil
         isSignedIn = false
         lastError = nil
+        NotificationCenter.default.post(name: .yapAuthStateChanged, object: nil)
+    }
+
+    /// Persist a new display name via PATCH /v1/me.
+    func updateName(_ name: String) async {
+        guard let session = Settings.shared.sessionToken else { return }
+        do {
+            currentUser = try await APIClient.shared.updateName(name, session: session)
+        } catch APIError.invalidSession {
+            signOut()
+        } catch {
+            NSLog("Yap updateName failed: \(error)")
+        }
     }
 }

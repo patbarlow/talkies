@@ -12,18 +12,10 @@ extension Notification.Name {
 final class Settings: ObservableObject {
     static let shared = Settings()
 
-    @Published private(set) var groqKey: String?
-    @Published private(set) var anthropicKey: String?
     @Published private(set) var sessionToken: String?
 
     @Published var cleanupEnabled: Bool {
         didSet { UserDefaults.standard.set(cleanupEnabled, forKey: "cleanupEnabled") }
-    }
-    @Published var hasSkippedSignIn: Bool {
-        didSet {
-            UserDefaults.standard.set(hasSkippedSignIn, forKey: "hasSkippedSignIn")
-            NotificationCenter.default.post(name: .yapAuthStateChanged, object: nil)
-        }
     }
     @Published var customVocabulary: String? {
         didSet { UserDefaults.standard.set(customVocabulary, forKey: "customVocabulary") }
@@ -38,11 +30,8 @@ final class Settings: ObservableObject {
     }
 
     private init() {
-        self.groqKey = Keychain.read("groq")
-        self.anthropicKey = Keychain.read("anthropic")
         self.sessionToken = Keychain.read("session").flatMap { $0.isEmpty ? nil : $0 }
         self.cleanupEnabled = UserDefaults.standard.object(forKey: "cleanupEnabled") as? Bool ?? true
-        self.hasSkippedSignIn = UserDefaults.standard.bool(forKey: "hasSkippedSignIn")
         self.customVocabulary = UserDefaults.standard.string(forKey: "customVocabulary")
 
         if let data = UserDefaults.standard.data(forKey: "hotkey"),
@@ -51,16 +40,6 @@ final class Settings: ObservableObject {
         } else {
             self.hotkey = .defaultSpec
         }
-    }
-
-    func setGroqKey(_ value: String) {
-        groqKey = value
-        Keychain.write("groq", value)
-    }
-
-    func setAnthropicKey(_ value: String) {
-        anthropicKey = value
-        Keychain.write("anthropic", value)
     }
 
     func setSessionToken(_ value: String?) {

@@ -123,6 +123,41 @@ final class APIClient {
         }
     }
 
+    func updateName(_ name: String, session: String) async throws -> PublicUser {
+        let body = try JSONSerialization.data(withJSONObject: ["name": name])
+        let (data, status) = try await request(method: "PATCH", path: "/v1/me", body: body, session: session)
+        if status == 401 { throw APIError.invalidSession }
+        guard status == 200 else {
+            throw APIError.http(status, String(data: data, encoding: .utf8) ?? "")
+        }
+        do {
+            return try JSONDecoder().decode(PublicUser.self, from: data)
+        } catch {
+            throw APIError.decoding(error)
+        }
+    }
+
+    // MARK: - Stripe
+
+    struct CheckoutResponse: Decodable { let url: String }
+
+    func stripeCheckout(session: String) async throws -> URL {
+        let (data, status) = try await post(path: "/v1/stripe/checkout", body: Data(), session: session)
+        if status == 401 { throw APIError.invalidSession }
+        guard status == 200 else {
+            throw APIError.http(status, String(data: data, encoding: .utf8) ?? "")
+        }
+        do {
+            let decoded = try JSONDecoder().decode(CheckoutResponse.self, from: data)
+            guard let url = URL(string: decoded.url) else {
+                throw APIError.decoding(NSError(domain: "yap", code: 0))
+            }
+            return url
+        } catch {
+            throw APIError.decoding(error)
+        }
+    }
+
     // MARK: - Transcribe
 
     struct TranscribeResponse: Decodable {
@@ -218,8 +253,17 @@ final class APIClient {
     }
 
     private func post(path: String, body: Data, session: String?) async throws -> (Data, Int) {
+        try await request(method: "POST", path: path, body: body, session: session)
+    }
+
+    private func request(
+        method: String,
+        path: String,
+        body: Data,
+        session: String?
+    ) async throws -> (Data, Int) {
         var request = URLRequest(url: baseURL.appendingPathComponent(path))
-        request.httpMethod = "POST"
+        request.httpMethod = method
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         if let session { request.setValue("Bearer \(session)", forHTTPHeaderField: "Authorization") }
         do {

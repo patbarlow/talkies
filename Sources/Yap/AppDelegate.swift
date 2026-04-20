@@ -72,7 +72,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// - Authenticated + Accessibility missing: open Settings and navigate
     ///   to Permissions so the user can explicitly click Allow.
     private func reconcile() {
-        let isAuthed = AuthStore.shared.isSignedIn || Settings.shared.hasSkippedSignIn
+        let isAuthed = AuthStore.shared.isSignedIn
 
         guard isAuthed else {
             hotkey?.uninstall()
@@ -340,12 +340,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         FloatingOverlay.shared.show(.processing)
         do {
             let raw = try await Transcriber.shared.transcribe(wavURL: url)
-            let final: String
-            if Settings.shared.cleanupEnabled, Settings.shared.anthropicKey?.isEmpty == false {
-                final = (try? await Cleaner.shared.clean(raw)) ?? raw
-            } else {
-                final = raw
-            }
+            let final: String = Settings.shared.cleanupEnabled
+                ? ((try? await Cleaner.shared.clean(raw)) ?? raw)
+                : raw
             // Capture the target app BEFORE we paste — the synthesized ⌘V may briefly steal focus.
             let target = NSWorkspace.shared.frontmostApplication
             Paster.paste(final)

@@ -10,12 +10,11 @@ final class SettingsRouter: ObservableObject {
 struct SettingsView: View {
     @StateObject private var router = SettingsRouter.shared
     @StateObject private var auth = AuthStore.shared
-    @StateObject private var settings = Settings.shared
 
     enum Pane: String, Hashable, CaseIterable, Identifiable {
         case home, library
         case hotkey, cleanup, vocabulary
-        case account, permissions, keys
+        case account, permissions
         case about
 
         var id: String { rawValue }
@@ -29,7 +28,6 @@ struct SettingsView: View {
             case .vocabulary: "Vocabulary"
             case .account: "Account"
             case .permissions: "Permissions"
-            case .keys: "API Keys"
             case .about: "About"
             }
         }
@@ -43,7 +41,6 @@ struct SettingsView: View {
             case .vocabulary: "book.fill"
             case .account: "person.fill"
             case .permissions: "checkmark.shield.fill"
-            case .keys: "key.fill"
             case .about: "info.circle.fill"
             }
         }
@@ -57,7 +54,6 @@ struct SettingsView: View {
             case .vocabulary: Tile.vocab
             case .account: Tile.account
             case .permissions: Tile.perms
-            case .keys: Tile.keys
             case .about: Tile.about
             }
         }
@@ -65,13 +61,13 @@ struct SettingsView: View {
 
     var body: some View {
         Group {
-            if !auth.isSignedIn && !settings.hasSkippedSignIn {
+            if !auth.isSignedIn {
                 SignInPane()
             } else {
                 splitView
             }
         }
-        .frame(minWidth: 760, minHeight: 520)
+        .frame(minWidth: 820, minHeight: 560)
         .tint(.mint)
     }
 
@@ -90,7 +86,6 @@ struct SettingsView: View {
                 Section("Setup") {
                     row(.account)
                     row(.permissions)
-                    row(.keys)
                 }
 
                 Section("Yap") {
@@ -98,7 +93,12 @@ struct SettingsView: View {
                 }
             }
             .listStyle(.sidebar)
-            .navigationSplitViewColumnWidth(min: 190, ideal: 210, max: 240)
+            .scrollContentBackground(.hidden)
+            .background(Color(nsColor: .windowBackgroundColor))
+            // Fixed sidebar — same min/ideal/max locks the width so the user
+            // can't resize it, matching the reference design.
+            .navigationSplitViewColumnWidth(200)
+            .toolbar(removing: .sidebarToggle)
         } detail: {
             ScrollView {
                 Group {
@@ -110,14 +110,15 @@ struct SettingsView: View {
                     case .vocabulary: VocabularyPane()
                     case .account: AccountPane()
                     case .permissions: PermissionsPane()
-                    case .keys: KeysPane()
                     case .about: AboutPane()
                     }
                 }
                 .padding(24)
             }
+            .background(Color(nsColor: .underPageBackgroundColor))
             .navigationTitle(router.selection.title)
         }
+        .navigationSplitViewStyle(.balanced)
     }
 
     private func row(_ pane: Pane) -> some View {
@@ -296,65 +297,6 @@ struct HotkeyPane: View {
 
             Spacer()
         }
-    }
-}
-
-// MARK: - Keys
-
-struct KeysPane: View {
-    @StateObject private var settings = Settings.shared
-    @State private var groqDraft = ""
-    @State private var anthropicDraft = ""
-    @State private var saved = false
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("Keys are stored in macOS Keychain under `app.yap.Yap`.")
-                .foregroundStyle(.secondary)
-                .font(.callout)
-
-            VStack(spacing: 0) {
-                keyRow(title: "Groq", subtitle: "Used for transcription (Whisper Large v3)", binding: $groqDraft)
-                Divider()
-                keyRow(title: "Anthropic", subtitle: "Optional — powers the cleanup pass", binding: $anthropicDraft)
-            }
-            .background(RoundedRectangle(cornerRadius: 14).fill(Color(nsColor: .controlBackgroundColor)))
-
-            HStack {
-                Button("Save keys") {
-                    if !groqDraft.isEmpty { settings.setGroqKey(groqDraft) }
-                    if !anthropicDraft.isEmpty { settings.setAnthropicKey(anthropicDraft) }
-                    saved = true
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { saved = false }
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(.mint)
-                if saved {
-                    Label("Saved", systemImage: "checkmark.circle.fill")
-                        .foregroundStyle(.green)
-                        .font(.callout)
-                }
-            }
-            Spacer()
-        }
-        .onAppear {
-            groqDraft = settings.groqKey ?? ""
-            anthropicDraft = settings.anthropicKey ?? ""
-        }
-    }
-
-    private func keyRow(title: String, subtitle: String, binding: Binding<String>) -> some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title).font(.body.weight(.medium))
-                Text(subtitle).font(.caption).foregroundStyle(.secondary)
-            }
-            Spacer()
-            SecureField("sk-…", text: binding)
-                .textFieldStyle(.roundedBorder)
-                .frame(width: 300)
-        }
-        .padding(16)
     }
 }
 

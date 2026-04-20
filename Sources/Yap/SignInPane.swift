@@ -2,7 +2,6 @@ import SwiftUI
 
 struct SignInPane: View {
     @StateObject private var auth = AuthStore.shared
-    @StateObject private var settings = Settings.shared
 
     @State private var step: Step = .enterEmail
     @State private var email: String = ""
@@ -46,13 +45,6 @@ struct SignInPane: View {
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 40)
             }
-
-            Button("Use my own API keys →") {
-                settings.hasSkippedSignIn = true
-            }
-            .buttonStyle(.borderless)
-            .font(.callout)
-            .foregroundStyle(.secondary)
 
             Spacer()
 
