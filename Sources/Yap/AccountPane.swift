@@ -21,6 +21,9 @@ struct AccountPane: View {
             Spacer()
         }
         .task { await auth.refresh() }
+        .onAppear {
+            if nameDraft.isEmpty { nameDraft = auth.currentUser?.name ?? "" }
+        }
         .onChange(of: auth.currentUser?.name) { _, new in
             nameDraft = new ?? ""
         }
@@ -33,10 +36,17 @@ struct AccountPane: View {
             avatarButton
 
             VStack(alignment: .leading, spacing: 6) {
-                TextField("Your name", text: $nameDraft)
-                    .textFieldStyle(.plain)
-                    .font(.title3.weight(.semibold))
-                    .onSubmit { Task { await saveName() } }
+                HStack(alignment: .firstTextBaseline, spacing: 10) {
+                    TextField("Your name", text: $nameDraft)
+                        .textFieldStyle(.plain)
+                        .font(.title3.weight(.semibold))
+                        .onSubmit { Task { await saveName() } }
+                    if nameDirty {
+                        Button("Save") { Task { await saveName() } }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                    }
+                }
                 Text(user.email)
                     .font(.callout)
                     .foregroundStyle(.secondary)
@@ -90,8 +100,8 @@ struct AccountPane: View {
                 }
             }
             .padding(18)
-            .background(RoundedRectangle(cornerRadius: 14).fill(Color.white))
-            .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.black.opacity(0.06)))
+            .background(RoundedRectangle(cornerRadius: 14).fill(Color(nsColor: .controlBackgroundColor)))
+            .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.primary.opacity(0.08)))
         }
 
         HStack {
@@ -145,6 +155,10 @@ struct AccountPane: View {
     }
 
     // MARK: - Name save
+
+    private var nameDirty: Bool {
+        nameDraft.trimmingCharacters(in: .whitespacesAndNewlines) != (auth.currentUser?.name ?? "")
+    }
 
     private func saveName() async {
         let trimmed = nameDraft.trimmingCharacters(in: .whitespacesAndNewlines)
