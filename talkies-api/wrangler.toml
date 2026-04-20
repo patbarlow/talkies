@@ -11,7 +11,7 @@ APPLE_BUNDLE_ID = "app.talkies.Talkies"
 [[d1_databases]]
 binding = "DB"
 database_name = "talkies"
-database_id = "REPLACE_WITH_DB_ID_FROM_WRANGLER_CREATE"
+database_id = "06c316de-9c50-4f26-b6ab-ec7f88a9c2d5"
 
 # Secrets — set via `wrangler secret put <NAME>`, never committed:
 #   SESSION_SECRET          (run `openssl rand -hex 32`)
