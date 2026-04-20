@@ -32,5 +32,15 @@
     <string>Yap listens to your microphone while you hold the push-to-talk key so it can transcribe what you say.</string>
     <key>NSHighResolutionCapable</key>
     <true/>
+    <key>SUFeedURL</key>
+    <string>https://patbarlow.github.io/talkies/appcast.xml</string>
+    <key>SUPublicEDKey</key>
+    <string>REPLACE_ME_WITH_OUTPUT_OF_generate_keys</string>
+    <key>SUEnableAutomaticChecks</key>
+    <true/>
+    <key>SUScheduledCheckInterval</key>
+    <integer>86400</integer>
+    <key>SUAutomaticallyUpdate</key>
+    <false/>
 </dict>
 </plist>

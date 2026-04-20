@@ -1,6 +1,7 @@
 import AppKit
 import AVFoundation
 import Carbon.HIToolbox
+import Sparkle
 import SwiftUI
 
 @MainActor
@@ -13,6 +14,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private var retryTimer: Timer?
     private var recordingStartedAt: Date?
+
+    // Sparkle — auto-update controller. `startingUpdater: true` runs periodic
+    // background checks per SUScheduledCheckInterval in Info.plist.
+    private lazy var updaterController = SPUStandardUpdaterController(
+        startingUpdater: true,
+        updaterDelegate: nil,
+        userDriverDelegate: nil
+    )
 
     // Menu items that need live updates
     private var weekWordsItem: NSMenuItem!
@@ -100,6 +109,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)),
             keyEquivalent: ""
         ))
+        let checkForUpdates = NSMenuItem(
+            title: "Check for Updates…",
+            action: #selector(SPUStandardUpdaterController.checkForUpdates(_:)),
+            keyEquivalent: ""
+        )
+        checkForUpdates.target = updaterController
+        appMenu.addItem(checkForUpdates)
         appMenu.addItem(.separator())
         let settings = NSMenuItem(
             title: "Settings…",
