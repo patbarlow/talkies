@@ -32,15 +32,14 @@ For local dev, copy `.dev.vars.example` → `.dev.vars` and fill in the same val
 
 ## Email delivery (Resend)
 
-Sign-in codes go out through [Resend](https://resend.com).
+Sign-in codes go out through [Resend](https://resend.com), from `Yap <noreply@speaking.computer>` (baked in as the default in `email.ts`). `speaking.computer` must be verified in your Resend account for this to deliver.
 
-1. Sign up, grab an API key from the Resend dashboard → `wrangler secret put RESEND_API_KEY`.
-2. **For initial dev:** the default from-address is `onboarding@resend.dev`. Resend restricts this address to only delivering to email addresses you've verified on your Resend account — fine for testing with your own inbox.
-3. **For production:** add and verify `yap.app` (or whatever domain you own) in the Resend dashboard. Then set `RESEND_FROM` so codes come from your address:
+1. Sign up to Resend and verify `speaking.computer` (DKIM/SPF/DMARC records in Cloudflare DNS).
+2. Grab an API key from the Resend dashboard → `wrangler secret put RESEND_API_KEY`.
+3. If you ever want a different from-address, override with the `RESEND_FROM` env var:
    ```bash
-   npx wrangler secret put RESEND_FROM    # e.g. Yap <login@yap.app>
+   npx wrangler secret put RESEND_FROM    # e.g. Yap <hello@speaking.computer>
    ```
-   (Or set it in `wrangler.toml` vars — it's not secret.)
 
 ## Run
 

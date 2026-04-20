@@ -21,7 +21,7 @@ export async function sendCodeEmail(
   to: string,
   code: string,
 ): Promise<void> {
-  const from = env.RESEND_FROM ?? "Yap <onboarding@resend.dev>";
+  const from = env.RESEND_FROM ?? "Yap <noreply@speaking.computer>";
   const subject = "Your Yap sign-in code";
   const text =
     `Your Yap sign-in code is: ${code}\n\n` +
