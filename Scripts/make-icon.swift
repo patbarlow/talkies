@@ -42,15 +42,17 @@ func renderMaster(size: CGFloat) -> Data {
 
     let rect = NSRect(x: 0, y: 0, width: size, height: size)
 
-    // Background: subtle top-to-bottom gradient on black.
+    // Background: gentle top-to-bottom dark gradient (lifts the waveform's contrast
+    // without going muddy at 16–32 px).
     let bg = NSGradient(
-        starting: NSColor(srgbRed: 0.11, green: 0.11, blue: 0.13, alpha: 1),
-        ending:   NSColor(srgbRed: 0.00, green: 0.00, blue: 0.00, alpha: 1)
+        starting: NSColor(srgbRed: 0.18, green: 0.18, blue: 0.20, alpha: 1),
+        ending:   NSColor(srgbRed: 0.04, green: 0.04, blue: 0.05, alpha: 1)
     )
     bg?.draw(in: rect, angle: -90)
 
-    // Waveform symbol, centered, ~62% width, soft drop shadow.
-    let targetWidth = size * 0.62
+    // Waveform symbol, centered, ~72% width. Full white with a pronounced
+    // inner-lit feel via a soft halo + ground shadow.
+    let targetWidth = size * 0.72
     let aspect = symbol.size.height / symbol.size.width
     let targetHeight = targetWidth * aspect
     let symbolRect = NSRect(
@@ -60,13 +62,21 @@ func renderMaster(size: CGFloat) -> Data {
         height: targetHeight
     )
 
-    let shadow = NSShadow()
-    shadow.shadowColor = NSColor(white: 0, alpha: 0.45)
-    shadow.shadowOffset = NSSize(width: 0, height: -size * 0.012)
-    shadow.shadowBlurRadius = size * 0.025
-    shadow.set()
+    // Subtle glow underneath
+    let halo = NSShadow()
+    halo.shadowColor = NSColor(white: 1, alpha: 0.18)
+    halo.shadowOffset = .zero
+    halo.shadowBlurRadius = size * 0.04
+    halo.set()
+    symbol.draw(in: symbolRect, from: .zero, operation: .sourceOver, fraction: 1.0)
 
-    symbol.draw(in: symbolRect, from: .zero, operation: .sourceOver, fraction: 0.96)
+    // Second pass: crisp white on top with a slight drop shadow for depth
+    let drop = NSShadow()
+    drop.shadowColor = NSColor(white: 0, alpha: 0.55)
+    drop.shadowOffset = NSSize(width: 0, height: -size * 0.015)
+    drop.shadowBlurRadius = size * 0.03
+    drop.set()
+    symbol.draw(in: symbolRect, from: .zero, operation: .sourceOver, fraction: 1.0)
 
     NSGraphicsContext.restoreGraphicsState()
     return bitmap.representation(using: .png, properties: [:])!
