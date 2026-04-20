@@ -1,0 +1,9 @@
+.build/
+.swiftpm/
+build/
+*.xcodeproj/
+DerivedData/
+.DS_Store
+
+# Claude Code per-user permission overrides
+.claude/settings.local.json
