@@ -7,10 +7,11 @@
 #   1. Bumps CFBundleShortVersionString and CFBundleVersion in Info.plist
 #   2. Builds + signs via bundle.sh (Sparkle framework embedded, entitlements applied)
 #   3. Zips, submits to Apple notary, staples the ticket, re-zips for distribution
-#   4. Signs the zip with Sparkle's sign_update (EdDSA private key in keychain)
-#   5. Prepends an <item> to docs/appcast.xml pointing at the GitHub release asset
-#   6. Commits Info.plist + appcast.xml, tags v<version>, pushes everything
-#   7. Creates a GitHub release and uploads Yap-<version>.zip
+#   4. Creates a drag-to-Applications DMG, notarizes + staples it too
+#   5. Signs the zip with Sparkle's sign_update (EdDSA private key in keychain)
+#   6. Prepends an <item> to docs/appcast.xml pointing at the GitHub release asset
+#   7. Commits Info.plist + appcast.xml, tags v<version>, pushes everything
+#   8. Creates a GitHub release and uploads Yap-<version>.zip + .dmg
 #
 # Prerequisites (one-time per machine):
 #   - xcrun notarytool store-credentials "yap-notary" ...  (see release.sh comment below)
@@ -78,6 +79,17 @@ ditto -c -k --keepParent "$APP" "$ZIP"
 echo "==> Verifying Gatekeeper accepts the notarized build"
 spctl -a -vvv -t execute "$APP"
 
+# ---- DMG for humans (Sparkle uses the zip below) ----------------------------
+
+DMG="build/Yap-$VERSION.dmg"
+./Scripts/make-dmg.sh "$VERSION"
+
+echo "==> Notarizing DMG (avoids a 'cannot check DMG' prompt on first open)"
+xcrun notarytool submit "$DMG" \
+    --keychain-profile "yap-notary" \
+    --wait
+xcrun stapler staple "$DMG"
+
 # ---- Sign for Sparkle -------------------------------------------------------
 
 SIGN_UPDATE=$(find .build/artifacts -name "sign_update" -perm +111 -type f | head -1)
@@ -134,13 +146,14 @@ git tag "$TAG"
 git push origin main
 git push origin "$TAG"
 
-echo "==> Creating GitHub release and uploading $ZIP"
-gh release create "$TAG" "$ZIP" \
+echo "==> Creating GitHub release and uploading assets"
+gh release create "$TAG" "$ZIP" "$DMG" \
     --title "Yap $VERSION" \
-    --notes "Notarized, Sparkle-signed. Users on an older build will pick up this update from their Check for Updates… menu or automatically within 24 hours."
+    --notes "Notarized, Sparkle-signed. Download the DMG to install, or existing users will pick up the update from Check for Updates…"
 
 echo ""
 echo "Released $TAG"
-echo "Binary:       $ZIP"
-echo "Download URL: $DOWNLOAD_URL"
-echo "Appcast:      https://patbarlow.github.io/talkies/appcast.xml"
+echo "Zip (Sparkle): $ZIP"
+echo "DMG (humans):  $DMG"
+echo "Download URL:  $DOWNLOAD_URL"
+echo "Appcast:       https://patbarlow.github.io/talkies/appcast.xml"
