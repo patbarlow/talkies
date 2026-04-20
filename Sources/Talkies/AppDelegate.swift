@@ -15,9 +15,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var recordingStartedAt: Date?
 
     // Menu items that need live updates
-    private var hotkeyStatusItem: NSMenuItem!
-    private var accessibilityItem: NSMenuItem!
-    private var microphoneItem: NSMenuItem!
+    private var weekWordsItem: NSMenuItem!
+    private var totalWordsItem: NSMenuItem!
+    private var wpmItem: NSMenuItem!
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         buildMenuBar()
@@ -58,27 +58,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.autoenablesItems = false
         menu.delegate = self
 
-        hotkeyStatusItem = NSMenuItem(title: "Hotkey: —", action: nil, keyEquivalent: "")
-        hotkeyStatusItem.isEnabled = false
-        menu.addItem(hotkeyStatusItem)
+        weekWordsItem = NSMenuItem(title: "Words this week: —", action: nil, keyEquivalent: "")
+        weekWordsItem.isEnabled = false
+        menu.addItem(weekWordsItem)
 
-        accessibilityItem = NSMenuItem(title: "Accessibility: —", action: nil, keyEquivalent: "")
-        accessibilityItem.isEnabled = false
-        menu.addItem(accessibilityItem)
+        totalWordsItem = NSMenuItem(title: "Total words: —", action: nil, keyEquivalent: "")
+        totalWordsItem.isEnabled = false
+        menu.addItem(totalWordsItem)
 
-        microphoneItem = NSMenuItem(title: "Microphone: —", action: nil, keyEquivalent: "")
-        microphoneItem.isEnabled = false
-        menu.addItem(microphoneItem)
-
-        menu.addItem(.separator())
-
-        let reinstall = NSMenuItem(title: "Reinstall Hotkey", action: #selector(reinstallHotkey), keyEquivalent: "")
-        reinstall.target = self
-        menu.addItem(reinstall)
-
-        let openAX = NSMenuItem(title: "Open Privacy & Security Settings", action: #selector(openAccessibilitySettings), keyEquivalent: "")
-        openAX.target = self
-        menu.addItem(openAX)
+        wpmItem = NSMenuItem(title: "Average speed: —", action: nil, keyEquivalent: "")
+        wpmItem.isEnabled = false
+        menu.addItem(wpmItem)
 
         menu.addItem(.separator())
 
@@ -101,14 +91,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func refreshStatus() {
-        let ax = AXIsProcessTrusted()
-        let mic = AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
+        let stats = Stats.shared
+        weekWordsItem.title = "Words this week: \(stats.weekWords.formatted())"
+        totalWordsItem.title = "Total words: \(stats.totalWords.formatted())"
+        let wpm = stats.averageWPM
+        wpmItem.title = wpm > 0
+            ? "Average speed: \(Int(wpm)) WPM"
+            : "Average speed: —"
+
+        // Reflect tap health in the status-bar icon silently.
         let tapInstalled = hotkey?.isInstalled ?? false
-
-        hotkeyStatusItem.title = "Hotkey: \(Settings.shared.hotkey.label) \(tapInstalled ? "✓" : "✗")"
-        accessibilityItem.title = "Accessibility: \(ax ? "✓" : "✗ — required")"
-        microphoneItem.title = "Microphone: \(mic ? "✓" : "✗ — required")"
-
         if tapInstalled {
             if statusItem.button?.image?.accessibilityDescription != "Recording" {
                 setIdleIcon()
@@ -116,13 +108,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         } else {
             statusItem.button?.image = NSImage(systemSymbolName: "mic.slash", accessibilityDescription: "Not ready")
         }
-    }
-
-    // MARK: - Permissions
-
-    @objc private func openAccessibilitySettings() {
-        let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!
-        NSWorkspace.shared.open(url)
     }
 
     // MARK: - Hotkey

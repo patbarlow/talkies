@@ -20,6 +20,12 @@ mkdir -p "$APP/Contents/Resources"
 cp "$BIN_PATH" "$APP/Contents/MacOS/Talkies"
 cp "Resources/Info.plist" "$APP/Contents/Info.plist"
 
+if [[ -f "Resources/AppIcon.icns" ]]; then
+    cp "Resources/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
+else
+    echo "Warning: Resources/AppIcon.icns missing — run 'swift Scripts/make-icon.swift' to regenerate."
+fi
+
 echo "==> Ad-hoc signing with entitlements"
 codesign --force --deep --sign - \
     --entitlements "Resources/Talkies.entitlements" \
