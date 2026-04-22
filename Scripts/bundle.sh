@@ -34,8 +34,9 @@ if [[ -z "$SPARKLE_XC" ]]; then
     exit 1
 fi
 echo "==> Copying Sparkle.framework from $SPARKLE_XC"
-# -R preserves symlinks (critical for framework structure on macOS).
-cp -R "$SPARKLE_XC" "$APP/Contents/Frameworks/"
+# ditto --noextattr --norsrc preserves symlinks but strips any resource forks /
+# extended attributes that Synology Drive may have added to the source tree.
+ditto --noextattr --norsrc "$SPARKLE_XC" "$APP/Contents/Frameworks/Sparkle.framework"
 
 # SwiftPM executables don't embed @executable_path/../Frameworks in the rpath
 # the way Xcode does, so dyld can't find Sparkle at launch. Patch the binary
