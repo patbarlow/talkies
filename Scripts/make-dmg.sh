@@ -22,8 +22,8 @@ if [[ ! -d "$APP" ]]; then
     echo "Error: $APP not found. Run ./Scripts/bundle.sh first."
     exit 1
 fi
+# DMG is always "Yap.dmg" — humans download it by name, version is inside the app.
 DMG_NAME="Yap"
-[[ -n "$VERSION" ]] && DMG_NAME="Yap-$VERSION"
 DMG="build/$DMG_NAME.dmg"
 
 rm -f "$DMG"

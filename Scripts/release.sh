@@ -91,7 +91,7 @@ spctl -a -vvv -t execute "$STAGED_APP"
 
 # ---- DMG for humans (Sparkle uses the zip below) ----------------------------
 
-DMG="build/Yap-$VERSION.dmg"
+DMG="build/Yap.dmg"
 ./Scripts/make-dmg.sh "$VERSION" "$STAGED_APP"
 
 echo "==> Notarizing DMG (avoids a 'cannot check DMG' prompt on first open)"
