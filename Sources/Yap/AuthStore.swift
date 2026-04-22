@@ -46,6 +46,7 @@ final class AuthStore: ObservableObject {
             currentUser = result.user
             isSignedIn = true
             NotificationCenter.default.post(name: .yapAuthStateChanged, object: nil)
+            syncAvatarIfNeeded(user: result.user, session: result.session)
             return true
         } catch {
             lastError = error.localizedDescription
@@ -60,8 +61,10 @@ final class AuthStore: ObservableObject {
             return
         }
         do {
-            currentUser = try await APIClient.shared.me(session: session)
+            let user = try await APIClient.shared.me(session: session)
+            currentUser = user
             isSignedIn = true
+            syncAvatarIfNeeded(user: user, session: session)
         } catch APIError.invalidSession {
             signOut()
         } catch {
@@ -87,5 +90,10 @@ final class AuthStore: ObservableObject {
         } catch {
             NSLog("Yap updateName failed: \(error)")
         }
+    }
+
+    private func syncAvatarIfNeeded(user: PublicUser, session: String) {
+        guard user.hasAvatar else { return }
+        ProfileImage.shared.syncFromServer(session: session)
     }
 }

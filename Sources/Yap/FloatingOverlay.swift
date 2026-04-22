@@ -122,20 +122,27 @@ private struct OverlayRoot: View {
 
 private struct RecordingPill: View {
     @StateObject private var levels = AudioLevels.shared
+    @State private var idlePhase: Double = 0
+
+    private let idleTimer = Timer.publish(every: 0.05, on: .main, in: .common).autoconnect()
 
     var body: some View {
         HStack(spacing: 3) {
             ForEach(levels.bars.indices, id: \.self) { i in
-                let level = levels.bars[i]
+                let level = Double(levels.bars[i])
+                let idle = sin(idlePhase + Double(i) * 1.2) * 3 + 5
                 Capsule()
                     .fill(Color.white)
-                    .frame(width: 3, height: 6 + level * 20)
-                    .animation(.easeOut(duration: 0.1), value: level)
+                    .frame(width: 3, height: idle + level * 26)
+                    .animation(.easeOut(duration: 0.08), value: level)
             }
         }
         .padding(.horizontal, 20)
-        .padding(.vertical, 12)
+        .padding(.vertical, 10)
         .background(Capsule().fill(Color.black.opacity(0.92)))
+        .onReceive(idleTimer) { _ in
+            idlePhase += 0.06
+        }
     }
 }
 

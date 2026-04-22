@@ -9,6 +9,7 @@ struct PublicUser: Codable, Equatable {
     let totalWords: Int
     let weekStart: String
     let weekLimit: Int?
+    let hasAvatar: Bool
 }
 
 enum APIError: Error, LocalizedError {
@@ -168,12 +169,14 @@ final class APIClient {
     func transcribe(
         audio: URL,
         prompt: String?,
+        language: String,
         session: String
     ) async throws -> TranscribeResponse {
         let boundary = "Yap-\(UUID().uuidString)"
         var body = Data()
         let audioData = try Data(contentsOf: audio)
         body.appendFile(boundary: boundary, name: "audio", filename: "audio.wav", contentType: "audio/wav", data: audioData)
+        body.appendField(boundary: boundary, name: "language", value: language)
         if let prompt, !prompt.isEmpty {
             body.appendField(boundary: boundary, name: "prompt", value: prompt)
         }
@@ -219,11 +222,16 @@ final class APIClient {
         text: String,
         appName: String?,
         appBundleID: String?,
+        level: String,
+        tone: String?,
+        spellingVariant: String?,
         session: String
     ) async throws -> String {
-        var payload: [String: String] = ["text": text]
+        var payload: [String: String] = ["text": text, "level": level]
         if let appName { payload["appName"] = appName }
         if let appBundleID { payload["appBundleID"] = appBundleID }
+        if let tone { payload["tone"] = tone }
+        if let spellingVariant { payload["spellingVariant"] = spellingVariant }
         let body = try JSONSerialization.data(withJSONObject: payload)
 
         let (data, status) = try await post(path: "/v1/cleanup", body: body, session: session)
@@ -236,6 +244,31 @@ final class APIClient {
         } catch {
             throw APIError.decoding(error)
         }
+    }
+
+    // MARK: - Avatar
+
+    func uploadAvatar(pngData: Data, session: String) async throws {
+        let base64 = pngData.base64EncodedString()
+        let payload = try JSONSerialization.data(withJSONObject: ["avatar": base64])
+        let (data, status) = try await request(method: "PUT", path: "/v1/me/avatar", body: payload, session: session)
+        if status == 401 { throw APIError.invalidSession }
+        guard status == 200 else {
+            throw APIError.http(status, String(data: data, encoding: .utf8) ?? "")
+        }
+    }
+
+    struct AvatarResponse: Decodable { let avatar: String }
+
+    func downloadAvatar(session: String) async throws -> Data {
+        let (data, status) = try await get(path: "/v1/me/avatar", session: session)
+        if status == 401 { throw APIError.invalidSession }
+        guard status == 200 else { throw APIError.http(status, "") }
+        let response = try JSONDecoder().decode(AvatarResponse.self, from: data)
+        guard let decoded = Data(base64Encoded: response.avatar) else {
+            throw APIError.decoding(DecodingError.dataCorrupted(.init(codingPath: [], debugDescription: "bad base64")))
+        }
+        return decoded
     }
 
     // MARK: - Low-level

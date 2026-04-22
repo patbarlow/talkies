@@ -4,6 +4,7 @@ import SwiftUI
 struct AccountPane: View {
     @StateObject private var auth = AuthStore.shared
     @StateObject private var profileImage = ProfileImage.shared
+    @StateObject private var stats = Stats.shared
 
     @State private var nameDraft: String = ""
     @State private var upgrading: Bool = false
@@ -71,12 +72,37 @@ struct AccountPane: View {
                         .font(.callout).monospacedDigit().foregroundStyle(.secondary)
                 }
             }
-            if let limit = user.weekLimit, limit > 0 {
-                ProgressView(value: Double(min(user.weekWords, limit)), total: Double(limit))
-                    .tint(.mint)
+
+            let localWords = min(stats.weekWords, user.weekWords)
+            let otherWords = max(0, user.weekWords - localWords)
+            SplitProgressBar(thisMac: localWords, otherDevices: otherWords, limit: user.weekLimit)
+
+            if user.weekWords > 0 {
+                HStack(spacing: 16) {
+                    Label {
+                        Text("\(localWords.formatted()) this Mac")
+                            .font(.caption).monospacedDigit()
+                    } icon: {
+                        Circle().fill(Color.mint).frame(width: 8, height: 8)
+                    }
+                    .labelStyle(DotLabelStyle())
+                    if otherWords > 0 {
+                        Label {
+                            Text("\(otherWords.formatted()) other devices")
+                                .font(.caption).monospacedDigit()
+                        } icon: {
+                            Circle().fill(Color.mint.opacity(0.4)).frame(width: 8, height: 8)
+                        }
+                        .labelStyle(DotLabelStyle())
+                    }
+                }
+                .foregroundStyle(.secondary)
             }
-            Text("Resets Mondays 00:00 UTC.")
-                .font(.caption).foregroundStyle(.secondary)
+
+            TimelineView(.periodic(from: .now, by: 60)) { ctx in
+                Text(resetLabel(weekStart: user.weekStart, at: ctx.date))
+                    .font(.caption).foregroundStyle(.secondary)
+            }
         }
         .padding(18)
         .background(RoundedRectangle(cornerRadius: 14).fill(Color(nsColor: .controlBackgroundColor)))
@@ -194,6 +220,33 @@ struct AccountPane: View {
         }
     }
 
+    // MARK: - Reset label
+
+    private func resetLabel(weekStart: String, at now: Date) -> String {
+        let isoFull = ISO8601DateFormatter()
+        isoFull.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let isoBasic = ISO8601DateFormatter()
+        let start = isoFull.date(from: weekStart) ?? isoBasic.date(from: weekStart)
+        guard let start,
+              let nextReset = Calendar.current.date(byAdding: .day, value: 7, to: start)
+        else { return "Resets weekly" }
+
+        let remaining = nextReset.timeIntervalSince(now)
+        guard remaining > 0 else { return "Resetting soon" }
+
+        if remaining > 24 * 3600 {
+            let df = DateFormatter()
+            df.dateFormat = "EEE h:mm a"
+            return "Resets \(df.string(from: nextReset))"
+        } else {
+            let hours = Int(remaining) / 3600
+            let mins  = (Int(remaining) % 3600) / 60
+            return hours > 0
+                ? "Resets in \(hours) hr \(mins) min"
+                : "Resets in \(mins) min"
+        }
+    }
+
     // MARK: - Plan badge
 
     private func planBadge(_ plan: String) -> some View {
@@ -203,5 +256,48 @@ struct AccountPane: View {
             .padding(.vertical, 4)
             .background(Capsule().fill(plan == "pro" ? Color.mint : Color.secondary.opacity(0.2)))
             .foregroundStyle(plan == "pro" ? Color.black : Color.secondary)
+    }
+}
+
+// MARK: - SplitProgressBar
+
+private struct SplitProgressBar: View {
+    let thisMac: Int
+    let otherDevices: Int
+    let limit: Int?
+
+    var body: some View {
+        GeometryReader { geo in
+            let cap = Double(max(limit ?? (thisMac + otherDevices), 1))
+            let thisFrac  = min(Double(thisMac) / cap, 1.0)
+            let otherFrac = min(Double(otherDevices) / cap, 1.0 - thisFrac)
+            let w = geo.size.width
+
+            ZStack(alignment: .leading) {
+                RoundedRectangle(cornerRadius: 2)
+                    .fill(Color.secondary.opacity(0.15))
+                    .frame(height: 6)
+                if thisFrac + otherFrac > 0 {
+                    RoundedRectangle(cornerRadius: 2)
+                        .fill(Color.mint.opacity(0.4))
+                        .frame(width: w * CGFloat(thisFrac + otherFrac), height: 6)
+                }
+                if thisFrac > 0 {
+                    RoundedRectangle(cornerRadius: 2)
+                        .fill(Color.mint)
+                        .frame(width: w * CGFloat(thisFrac), height: 6)
+                }
+            }
+        }
+        .frame(height: 6)
+    }
+}
+
+private struct DotLabelStyle: LabelStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        HStack(spacing: 4) {
+            configuration.icon
+            configuration.title
+        }
     }
 }

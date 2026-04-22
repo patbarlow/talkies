@@ -9,6 +9,7 @@ export interface User {
   week_start: string;
   stripe_customer_id: string | null;
   stripe_subscription_id: string | null;
+  avatar_data: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -24,6 +25,7 @@ export interface PublicUser {
   totalWords: number;
   weekStart: string;
   weekLimit: number | null;
+  hasAvatar: boolean;
 }
 
 export function publicUser(u: User): PublicUser {
@@ -36,6 +38,7 @@ export function publicUser(u: User): PublicUser {
     totalWords: u.total_words,
     weekStart: u.week_start,
     weekLimit: u.plan === "free" ? WEEK_LIMIT_FREE : null,
+    hasAvatar: u.avatar_data != null && u.avatar_data.length > 0,
   };
 }
 

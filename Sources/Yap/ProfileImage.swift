@@ -2,13 +2,12 @@ import AppKit
 import Foundation
 import SwiftUI
 
-/// Local-only avatar store. Nothing uploads to the backend — the image lives
-/// in ~/Library/Application Support/Yap/avatar.png.
 @MainActor
 final class ProfileImage: ObservableObject {
     static let shared = ProfileImage()
 
     @Published private(set) var image: NSImage?
+    @Published private(set) var isSyncing = false
 
     private let url: URL
 
@@ -48,7 +47,21 @@ final class ProfileImage: ObservableObject {
         image = nil
     }
 
-    /// Scale to 256×256, save as PNG so it reloads fast and doesn't bloat.
+    /// Download the avatar from the backend if we don't have a local copy.
+    func syncFromServer(session: String) {
+        guard image == nil else { return }
+        Task {
+            do {
+                let png = try await APIClient.shared.downloadAvatar(session: session)
+                try png.write(to: url, options: .atomic)
+                load()
+            } catch {
+                NSLog("Yap: avatar download skipped: \(error)")
+            }
+        }
+    }
+
+    /// Scale to 256×256, save locally, and upload to backend.
     private func save(from source: URL) {
         guard let loaded = NSImage(contentsOf: source) else { return }
         let size = NSSize(width: 256, height: 256)
@@ -67,7 +80,6 @@ final class ProfileImage: ObservableObject {
         NSGraphicsContext.saveGraphicsState()
         NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: bitmap)
 
-        // Aspect-fill the source into the square frame.
         let srcSize = loaded.size
         let scale = max(size.width / srcSize.width, size.height / srcSize.height)
         let scaled = NSSize(width: srcSize.width * scale, height: srcSize.height * scale)
@@ -86,8 +98,22 @@ final class ProfileImage: ObservableObject {
             let resized = NSImage(size: size)
             resized.addRepresentation(bitmap)
             image = resized
+            uploadToServer(pngData: png)
         } catch {
             NSLog("Yap: failed to save avatar: \(error)")
+        }
+    }
+
+    private func uploadToServer(pngData: Data) {
+        guard let session = Settings.shared.sessionToken else { return }
+        isSyncing = true
+        Task {
+            defer { isSyncing = false }
+            do {
+                try await APIClient.shared.uploadAvatar(pngData: pngData, session: session)
+            } catch {
+                NSLog("Yap: avatar upload failed: \(error)")
+            }
         }
     }
 }

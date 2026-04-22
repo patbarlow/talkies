@@ -337,10 +337,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         defer { try? FileManager.default.removeItem(at: url) }
 
+        guard duration >= 0.5 else {
+            FloatingOverlay.shared.show(.hidden)
+            return
+        }
+
         FloatingOverlay.shared.show(.processing)
         do {
             let raw = try await Transcriber.shared.transcribe(wavURL: url)
-            let final: String = Settings.shared.cleanupEnabled
+            guard !raw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                FloatingOverlay.shared.show(.hidden)
+                return
+            }
+            let final: String = Settings.shared.cleanupLevel != .off
                 ? ((try? await Cleaner.shared.clean(raw)) ?? raw)
                 : raw
             // Capture the target app BEFORE we paste — the synthesized ⌘V may briefly steal focus.
@@ -364,16 +373,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func openSettings() {
         if settingsWindow == nil {
-            let vc = NSHostingController(rootView: SettingsView())
-            let window = NSWindow(contentViewController: vc)
+            let view = NSHostingView(rootView: SettingsView())
+            let window = NSWindow(
+                contentRect: NSRect(x: 0, y: 0, width: 860, height: 580),
+                styleMask: [.titled, .closable, .miniaturizable, .fullSizeContentView],
+                backing: .buffered,
+                defer: false
+            )
             window.title = "Yap"
-            window.styleMask = [.titled, .closable, .miniaturizable, .fullSizeContentView]
             window.titleVisibility = .hidden
             window.titlebarAppearsTransparent = true
             window.isMovableByWindowBackground = true
             window.toolbarStyle = .unifiedCompact
             window.isReleasedWhenClosed = false
-            window.setContentSize(NSSize(width: 860, height: 580))
+            window.backgroundColor = NSColor(name: nil) { appearance in
+                appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+                    ? NSColor(calibratedRed: 0.11, green: 0.11, blue: 0.12, alpha: 1)
+                    : NSColor(calibratedRed: 0.94, green: 0.94, blue: 0.95, alpha: 1)
+            }
+            window.contentView = view
             window.center()
             window.delegate = self
             settingsWindow = window
@@ -386,6 +404,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         settingsWindow?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
+            self?.forcehideTitlebarSeparator()
+        }
+    }
+
+    // MARK: - Titlebar separator fix
+    // macOS Tahoe broke titlebarSeparatorStyle = .none for transparent titlebars.
+    // Walk the AppKit view hierarchy after show and hide any thin horizontal rules.
+
+    private func forcehideTitlebarSeparator() {
+        guard let themeFrame = settingsWindow?.contentView?.superview else { return }
+        hideSeparators(in: themeFrame)
+    }
+
+    private func hideSeparators(in view: NSView) {
+        for sub in view.subviews {
+            let name = String(describing: type(of: sub))
+            if name.contains("Separator") || name.contains("Divider") {
+                sub.isHidden = true
+            } else if sub.frame.height <= 1 && sub.frame.width > 100 {
+                sub.isHidden = true
+            } else {
+                hideSeparators(in: sub)
+            }
+        }
     }
 }
 
@@ -403,5 +446,9 @@ extension AppDelegate: NSWindowDelegate {
             // Back to menu-bar-only accessory app once Settings closes.
             NSApp.setActivationPolicy(.accessory)
         }
+    }
+
+    nonisolated func windowDidBecomeKey(_ notification: Notification) {
+        Task { @MainActor in self.forcehideTitlebarSeparator() }
     }
 }
