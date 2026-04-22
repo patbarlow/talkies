@@ -14,9 +14,11 @@ final class Transcriber {
             throw TranscriberError.notSignedIn
         }
         let vocab = await Settings.shared.customVocabulary
+        let language = await Settings.shared.transcriptionLanguage.whisperCode
         let result = try await APIClient.shared.transcribe(
             audio: wavURL,
             prompt: vocab,
+            language: language,
             session: session
         )
         Task { await AuthStore.shared.refresh() }

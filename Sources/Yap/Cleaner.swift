@@ -15,10 +15,15 @@ final class Cleaner {
             throw CleanerError.notSignedIn
         }
         let frontApp = await MainActor.run { NSWorkspace.shared.frontmostApplication }
+        let level = await Settings.shared.cleanupLevel
+        let lang = await Settings.shared.transcriptionLanguage
         return try await APIClient.shared.cleanup(
             text: raw,
             appName: frontApp?.localizedName,
             appBundleID: frontApp?.bundleIdentifier,
+            level: level.rawValue,
+            tone: nil,
+            spellingVariant: lang.spellingVariant,
             session: session
         )
     }

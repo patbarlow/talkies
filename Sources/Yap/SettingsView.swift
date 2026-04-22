@@ -10,10 +10,17 @@ final class SettingsRouter: ObservableObject {
 struct SettingsView: View {
     @StateObject private var router = SettingsRouter.shared
     @StateObject private var auth = AuthStore.shared
+    @Environment(\.colorScheme) private var colorScheme
+
+    private var background: Color {
+        colorScheme == .dark
+            ? Color(nsColor: .underPageBackgroundColor)
+            : Color(white: 0.945)
+    }
 
     enum Pane: String, Hashable, CaseIterable, Identifiable {
         case home, library
-        case hotkey, cleanup, vocabulary
+        case hotkey, style, vocabulary
         case account, permissions
         case about
 
@@ -24,7 +31,7 @@ struct SettingsView: View {
             case .home: "Home"
             case .library: "Library"
             case .hotkey: "Hotkey"
-            case .cleanup: "Cleanup"
+            case .style: "Style"
             case .vocabulary: "Vocabulary"
             case .account: "Account"
             case .permissions: "Permissions"
@@ -37,7 +44,7 @@ struct SettingsView: View {
             case .home: "house.fill"
             case .library: "waveform"
             case .hotkey: "keyboard.fill"
-            case .cleanup: "sparkles"
+            case .style: "sparkles"
             case .vocabulary: "book.fill"
             case .account: "person.fill"
             case .permissions: "checkmark.shield.fill"
@@ -50,7 +57,7 @@ struct SettingsView: View {
             case .home: Tile.home
             case .library: Tile.library
             case .hotkey: Tile.hotkey
-            case .cleanup: Tile.cleanup
+            case .style: Tile.cleanup
             case .vocabulary: Tile.vocab
             case .account: Tile.account
             case .permissions: Tile.perms
@@ -69,6 +76,7 @@ struct SettingsView: View {
         }
         .frame(width: 860, height: 580)
         .tint(.mint)
+        .background(background.ignoresSafeArea())
     }
 
     // Manual HStack layout rather than NavigationSplitView. NavigationSplitView
@@ -80,38 +88,33 @@ struct SettingsView: View {
             sidebar
                 .frame(width: 220)
                 .frame(maxHeight: .infinity)
-                .background(Color(nsColor: .windowBackgroundColor))
-
-            Divider()
-
             detail
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(Color(nsColor: .underPageBackgroundColor))
         }
+        .background(background)
     }
 
     @ViewBuilder
     private var sidebar: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 1) {
-                sidebarRow(.home)
-                sidebarRow(.library)
+        VStack(alignment: .leading, spacing: 1) {
+            sidebarRow(.home)
+            sidebarRow(.library)
 
-                sectionHeader("Dictation")
-                sidebarRow(.hotkey)
-                sidebarRow(.cleanup)
-                sidebarRow(.vocabulary)
+            sectionHeader("Dictation")
+            sidebarRow(.hotkey)
+            sidebarRow(.style)
+            sidebarRow(.vocabulary)
 
-                sectionHeader("Setup")
-                sidebarRow(.account)
-                sidebarRow(.permissions)
+            sectionHeader("Setup")
+            sidebarRow(.account)
+            sidebarRow(.permissions)
 
-                sectionHeader("Yap")
-                sidebarRow(.about)
-            }
-            .padding(.vertical, 14)
+            sectionHeader("Yap")
+            sidebarRow(.about)
+
+            Spacer(minLength: 0)
         }
-        .scrollIndicators(.hidden)
+        .padding(.vertical, 14)
     }
 
     private func sidebarRow(_ pane: Pane) -> some View {
@@ -149,16 +152,12 @@ struct SettingsView: View {
     private var detail: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
-                Text(router.selection.title)
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(.secondary)
-
                 Group {
                     switch router.selection {
                     case .home: HomePane()
                     case .library: LibraryPane()
                     case .hotkey: HotkeyPane()
-                    case .cleanup: CleanupPane()
+                    case .style: StylePane()
                     case .vocabulary: VocabularyPane()
                     case .account: AccountPane()
                     case .permissions: PermissionsPane()
@@ -169,6 +168,7 @@ struct SettingsView: View {
             .padding(24)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
+        .scrollBounceBehavior(.basedOnSize)
     }
 }
 
@@ -195,10 +195,11 @@ struct HomePane: View {
             }
             .padding(20)
             .background(RoundedRectangle(cornerRadius: 14).fill(Color(nsColor: .controlBackgroundColor)))
+            .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.primary.opacity(0.08)))
 
             VStack(alignment: .leading, spacing: 0) {
                 Text("Get started")
-                    .font(.title3.bold())
+                    .font(.body.weight(.semibold))
                     .padding(.bottom, 8)
 
                 ChecklistRow(
@@ -228,6 +229,9 @@ struct HomePane: View {
                     subtitle: "Teach Yap names, jargon, or product terms."
                 )
             }
+            .padding(18)
+            .background(RoundedRectangle(cornerRadius: 14).fill(Color(nsColor: .controlBackgroundColor)))
+            .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.primary.opacity(0.08)))
 
             Spacer(minLength: 0)
         }
@@ -313,24 +317,27 @@ struct HotkeyPane: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            Text("Hold to dictate. Release to transcribe and paste into the frontmost app.")
-                .foregroundStyle(.secondary)
-                .font(.callout)
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Hold to dictate. Release to transcribe and paste into the frontmost app.")
+                    .foregroundStyle(.secondary)
+                    .font(.callout)
 
-            HStack {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Push to talk").font(.body.weight(.medium))
-                    Text("Hold this key to start recording.").font(.caption).foregroundStyle(.secondary)
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Push to talk").font(.body.weight(.medium))
+                        Text("Hold this key to start recording.").font(.caption).foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    HotkeyRecorder(spec: Binding(
+                        get: { settings.hotkey },
+                        set: { settings.hotkey = $0 }
+                    ))
+                    .frame(width: 300)
                 }
-                Spacer()
-                HotkeyRecorder(spec: Binding(
-                    get: { settings.hotkey },
-                    set: { settings.hotkey = $0 }
-                ))
-                .frame(width: 300)
             }
             .padding(16)
             .background(RoundedRectangle(cornerRadius: 14).fill(Color(nsColor: .controlBackgroundColor)))
+            .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.primary.opacity(0.08)))
 
             Text("Modifier keys (Right ⌘, fn, …) cancel automatically if another key is pressed, so regular shortcuts like ⌘C still work.")
                 .font(.caption)
@@ -341,34 +348,84 @@ struct HotkeyPane: View {
     }
 }
 
-// MARK: - Cleanup
+// MARK: - Style
 
-struct CleanupPane: View {
+struct StylePane: View {
     @StateObject private var settings = Settings.shared
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Run cleanup pass after transcription").font(.body.weight(.medium))
-                    Text("Uses Claude Haiku to polish the output.").font(.caption).foregroundStyle(.secondary)
-                }
-                Spacer()
-                Toggle("", isOn: $settings.cleanupEnabled)
-                    .toggleStyle(.switch)
-                    .labelsHidden()
-                    .tint(.mint)
-            }
-            .padding(16)
-            .background(RoundedRectangle(cornerRadius: 14).fill(Color(nsColor: .controlBackgroundColor)))
-
-            Text("Strips filler words (um, uh, like), fixes obvious mis-hearings, and gently matches the tone of the frontmost app. Adds ~200 ms of latency and costs fractions of a cent per dictation.")
-                .font(.callout)
-                .foregroundStyle(.secondary)
-
-            Spacer()
+        VStack(alignment: .leading, spacing: 22) {
+            languageSection
+            cleanupSection
+            Spacer(minLength: 0)
         }
     }
+
+    // MARK: Language
+
+    private var languageSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Language").font(.body.weight(.semibold))
+            Text("The language you speak. Sets spelling for English variants.")
+                .font(.callout).foregroundStyle(.secondary)
+
+            Picker("Language", selection: $settings.transcriptionLanguage) {
+                ForEach(TranscriptionLanguage.all) { lang in
+                    Text(lang.displayName).tag(lang)
+                }
+            }
+            .labelsHidden()
+            .frame(maxWidth: 260)
+        }
+        .padding(18)
+        .background(RoundedRectangle(cornerRadius: 14).fill(Color(nsColor: .controlBackgroundColor)))
+        .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.primary.opacity(0.08)))
+    }
+
+    // MARK: Cleanup level
+
+    private var cleanupSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Cleanup").font(.body.weight(.semibold))
+
+            HStack(spacing: 10) {
+                ForEach(CleanupLevel.allCases, id: \.self) { level in
+                    cleanupCard(level)
+                }
+            }
+        }
+        .padding(18)
+        .background(RoundedRectangle(cornerRadius: 14).fill(Color(nsColor: .controlBackgroundColor)))
+        .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.primary.opacity(0.08)))
+    }
+
+    private func cleanupCard(_ level: CleanupLevel) -> some View {
+        let selected = settings.cleanupLevel == level
+        return Button { settings.cleanupLevel = level } label: {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(level.label)
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(selected ? .white : .primary)
+                Text(level.description)
+                    .font(.caption)
+                    .foregroundStyle(selected ? .white.opacity(0.85) : .secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 0)
+            }
+            .padding(12)
+            .frame(maxWidth: .infinity, minHeight: 90, alignment: .topLeading)
+            .background(
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(selected ? Color.accentColor : Color.primary.opacity(0.05))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 10)
+                    .stroke(selected ? Color.clear : Color.primary.opacity(0.12))
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
 }
 
 // MARK: - Vocabulary
@@ -378,8 +435,8 @@ struct VocabularyPane: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Personal dictionary").font(.title3.bold())
-            Text("Add names, jargon, and product terms — one per line or comma-separated. Passed to Whisper as a prompt to bias recognition.")
+            Text("Personal dictionary").font(.body.weight(.semibold))
+            Text("Add names, jargon, and product terms — one per line or comma-separated. Passed to the transcription engine as context to bias recognition.")
                 .font(.callout)
                 .foregroundStyle(.secondary)
 
@@ -389,10 +446,10 @@ struct VocabularyPane: View {
             ))
             .font(.body.monospaced())
             .frame(minHeight: 240)
-            .padding(8)
-            .background(RoundedRectangle(cornerRadius: 14).fill(Color(nsColor: .controlBackgroundColor)))
-
-            Spacer()
+            .scrollContentBackground(.hidden)
         }
+        .padding(18)
+        .background(RoundedRectangle(cornerRadius: 14).fill(Color(nsColor: .controlBackgroundColor)))
+        .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.primary.opacity(0.08)))
     }
 }
