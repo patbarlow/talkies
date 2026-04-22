@@ -47,6 +47,11 @@ install_name_tool -add_rpath "@executable_path/../Frameworks" "$APP/Contents/Mac
 #   SIGN_ID="Developer ID Application: ..."  ./bundle.sh     # distribution
 SIGN_ID="${SIGN_ID:-Developer ID Application: Pat Barlow (T544U3WVL6)}"
 
+# Strip extended attributes that Synology Drive (or Finder) may have added —
+# codesign rejects any file with a resource fork or detritus xattrs.
+echo "==> Stripping extended attributes from bundle"
+xattr -cr "$APP"
+
 echo "==> Signing with: $SIGN_ID"
 
 # Sparkle's XPC services and embedded Updater.app ship with their own
