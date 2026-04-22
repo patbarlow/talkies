@@ -48,12 +48,12 @@ install_name_tool -add_rpath "@executable_path/../Frameworks" "$APP/Contents/Mac
 #   SIGN_ID="Developer ID Application: ..."  ./bundle.sh     # distribution
 SIGN_ID="${SIGN_ID:-Developer ID Application: Pat Barlow (T544U3WVL6)}"
 
-# Strip extended attributes and AppleDouble resource fork files that Synology
-# Drive (or Finder) may have added — codesign rejects any detritus.
-echo "==> Stripping extended attributes and resource forks from bundle"
-xattr -cr "$APP"
-find "$APP" -name "._*" -delete
-dot_clean -m "$APP"
+# Helper: strip xattrs and AppleDouble files from a path right before signing.
+# Called per-component because Synology Drive can re-add ._* files between ops.
+strip_detritus() {
+    xattr -cr "$1" 2>/dev/null || true
+    find "$1" -name "._*" -delete 2>/dev/null || true
+}
 
 echo "==> Signing with: $SIGN_ID"
 
@@ -68,18 +68,21 @@ for nested in \
     "$APP/Contents/Frameworks/Sparkle.framework/Versions/B/Autoupdate"
 do
     if [[ -e "$nested" ]]; then
+        strip_detritus "$nested"
         codesign --force --sign "$SIGN_ID" --options runtime \
             --preserve-metadata=entitlements "$nested"
     fi
 done
 
 # Sign the framework itself (which seals the nested components above).
+strip_detritus "$APP/Contents/Frameworks/Sparkle.framework"
 codesign --force --sign "$SIGN_ID" --options runtime \
     "$APP/Contents/Frameworks/Sparkle.framework"
 
 # Finally, sign the outer app bundle with Yap's own entitlements. No --deep
 # here — Sparkle is already correctly signed; --deep would overwrite with
 # Yap's entitlements and break the Sparkle XPC services.
+strip_detritus "$APP"
 codesign --force --sign "$SIGN_ID" \
     --entitlements "Resources/Yap.entitlements" \
     --options runtime \
