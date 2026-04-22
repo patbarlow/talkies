@@ -60,7 +60,15 @@ ZIP="build/Yap-$VERSION.zip"
 
 # ---- Notarize ---------------------------------------------------------------
 
+# Strip AppleDouble files Synology Drive adds after codesigning — they cause
+# `codesign --deep --strict` to fail, which is how Sparkle validates updates.
+strip_app_detritus() {
+    find "$APP" -name "._*" -delete 2>/dev/null || true
+    xattr -cr "$APP" 2>/dev/null || true
+}
+
 echo "==> Packing zip for notarization"
+strip_app_detritus
 rm -f "$ZIP"
 ditto -c -k --keepParent "$APP" "$ZIP"
 
@@ -73,6 +81,7 @@ echo "==> Stapling notarization ticket"
 xcrun stapler staple "$APP"
 
 # Re-zip with stapled app for distribution.
+strip_app_detritus
 rm -f "$ZIP"
 ditto -c -k --keepParent "$APP" "$ZIP"
 
