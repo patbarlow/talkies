@@ -1,0 +1,17 @@
+name: Deploy site
+
+on:
+  push:
+    branches: [main]
+    paths: [site/**]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Deploy to Cloudflare Pages
+        run: npx wrangler pages deploy site --project-name yap-site --branch main
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: e9622d4ec10c286264a66a8a4f7526cf
