@@ -16,13 +16,12 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-APP="build/Yap.app"
+VERSION="${1:-}"
+APP="${2:-build/Yap.app}"
 if [[ ! -d "$APP" ]]; then
     echo "Error: $APP not found. Run ./Scripts/bundle.sh first."
     exit 1
 fi
-
-VERSION="${1:-}"
 DMG_NAME="Yap"
 [[ -n "$VERSION" ]] && DMG_NAME="Yap-$VERSION"
 DMG="build/$DMG_NAME.dmg"

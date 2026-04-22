@@ -60,17 +60,19 @@ ZIP="build/Yap-$VERSION.zip"
 
 # ---- Notarize ---------------------------------------------------------------
 
-# Strip AppleDouble files Synology Drive adds after codesigning — they cause
-# `codesign --deep --strict` to fail, which is how Sparkle validates updates.
-strip_app_detritus() {
-    find "$APP" -name "._*" -delete 2>/dev/null || true
-    xattr -cr "$APP" 2>/dev/null || true
-}
+# Synology Drive continuously adds AppleDouble (._*) files to any directory it
+# watches. These break `codesign --deep --strict`, which Sparkle uses to
+# validate updates. The only reliable fix is to work from /tmp, which is
+# outside Synology's watch scope.
+STAGING="/tmp/YapRelease-$VERSION"
+STAGED_APP="$STAGING/Yap.app"
+rm -rf "$STAGING" && mkdir -p "$STAGING"
+echo "==> Copying app to $STAGING (outside Synology Drive) for clean zipping"
+ditto "$APP" "$STAGED_APP"   # ditto strips resource forks by default on archive ops
 
 echo "==> Packing zip for notarization"
-strip_app_detritus
 rm -f "$ZIP"
-ditto -c -k --keepParent "$APP" "$ZIP"
+ditto -c -k --keepParent "$STAGED_APP" "$ZIP"
 
 echo "==> Submitting to Apple notary service (usually 1-3 min)"
 xcrun notarytool submit "$ZIP" \
@@ -78,20 +80,19 @@ xcrun notarytool submit "$ZIP" \
     --wait
 
 echo "==> Stapling notarization ticket"
-xcrun stapler staple "$APP"
+xcrun stapler staple "$STAGED_APP"
 
 # Re-zip with stapled app for distribution.
-strip_app_detritus
 rm -f "$ZIP"
-ditto -c -k --keepParent "$APP" "$ZIP"
+ditto -c -k --keepParent "$STAGED_APP" "$ZIP"
 
 echo "==> Verifying Gatekeeper accepts the notarized build"
-spctl -a -vvv -t execute "$APP"
+spctl -a -vvv -t execute "$STAGED_APP"
 
 # ---- DMG for humans (Sparkle uses the zip below) ----------------------------
 
 DMG="build/Yap-$VERSION.dmg"
-./Scripts/make-dmg.sh "$VERSION"
+./Scripts/make-dmg.sh "$VERSION" "$STAGED_APP"
 
 echo "==> Notarizing DMG (avoids a 'cannot check DMG' prompt on first open)"
 xcrun notarytool submit "$DMG" \
