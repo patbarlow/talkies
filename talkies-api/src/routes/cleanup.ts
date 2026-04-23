@@ -78,7 +78,9 @@ function buildSystemPrompt(appName?: string, _bundleID?: string, level = "clean"
     case "clean":
       return (
         `Lightly clean up this dictated text. Remove filler words (um, uh, like, you know) ` +
-        `and fix obvious mis-hearings. Apply correct punctuation and capitalisation.` +
+        `and fix obvious mis-hearings. Apply correct punctuation and capitalisation — ` +
+        `add commas and full stops wherever they naturally belong, including after clauses, ` +
+        `at the end of sentences, and between listed items.` +
         `${toneHint}${ctx}${spelling} Preserve the user's natural phrasing — keep casual ` +
         `contractions like "wanna", "gonna", "kinda" if the transcription captured them. ` +
         `Do not restructure or embellish. Return only the cleaned text, nothing else.`
