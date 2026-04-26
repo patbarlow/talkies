@@ -14,6 +14,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private var retryTimer: Timer?
     private var recordingStartedAt: Date?
+    private var pendingSyncDone = false
 
     // Sparkle — auto-update controller. `startingUpdater: true` runs periodic
     // background checks per SUScheduledCheckInterval in Info.plist.
@@ -82,6 +83,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if !(settingsWindow?.isVisible ?? false) { openSettings() }
             refreshStatus()
             return
+        }
+
+        if !pendingSyncDone {
+            pendingSyncDone = true
+            Task { await SessionSyncer.shared.syncPending() }
         }
 
         if AXIsProcessTrusted() {
@@ -354,15 +360,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 : raw
             // Capture the target app BEFORE we paste — the synthesized ⌘V may briefly steal focus.
             let target = NSWorkspace.shared.frontmostApplication
+            let cleanupLevel = Settings.shared.cleanupLevel
+            let language = Settings.shared.transcriptionLanguage
             Paster.paste(final)
             Stats.shared.record(text: final, duration: duration)
-            Library.shared.record(
+            if let entry = Library.shared.record(
                 raw: raw,
                 final: final,
                 duration: duration,
                 appName: target?.localizedName,
-                bundleID: target?.bundleIdentifier
-            )
+                bundleID: target?.bundleIdentifier,
+                cleanupLevel: cleanupLevel.rawValue,
+                language: language.whisperCode
+            ) {
+                Task { await SessionSyncer.shared.syncEntry(entry) }
+            }
         } catch {
             NSLog("Yap pipeline error: \(error)")
         }

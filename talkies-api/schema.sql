@@ -25,6 +25,26 @@ CREATE TABLE users (
 CREATE INDEX idx_users_email ON users(email);
 CREATE INDEX idx_users_stripe_customer ON users(stripe_customer_id);
 
+-- Per-session analytics. Populated by the client after each transcription.
+-- Uses CREATE TABLE IF NOT EXISTS so re-running this migration is safe.
+CREATE TABLE IF NOT EXISTS sessions (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    recorded_at TEXT NOT NULL,
+    word_count INTEGER NOT NULL,
+    duration_seconds REAL NOT NULL,
+    app_name TEXT,
+    bundle_id TEXT,
+    cleanup_level TEXT,
+    language TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (user_id) REFERENCES users(id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id);
+CREATE INDEX IF NOT EXISTS idx_sessions_recorded_at ON sessions(recorded_at);
+CREATE INDEX IF NOT EXISTS idx_sessions_bundle_id ON sessions(bundle_id);
+
 CREATE TABLE email_codes (
     email TEXT PRIMARY KEY,
     code_hash TEXT NOT NULL,

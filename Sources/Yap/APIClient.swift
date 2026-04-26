@@ -246,6 +246,42 @@ final class APIClient {
         }
     }
 
+    // MARK: - Sessions
+
+    func syncSessions(events: [RecordingEntry], session: String) async throws {
+        struct Event: Encodable {
+            let id: String
+            let recorded_at: String
+            let word_count: Int
+            let duration_seconds: Double
+            let app_name: String?
+            let bundle_id: String?
+            let cleanup_level: String?
+            let language: String?
+        }
+        struct Payload: Encodable { let sessions: [Event] }
+
+        let iso = ISO8601DateFormatter()
+        let payload = Payload(sessions: events.map { e in
+            Event(
+                id: e.id.uuidString,
+                recorded_at: iso.string(from: e.timestamp),
+                word_count: e.wordCount,
+                duration_seconds: e.durationSeconds,
+                app_name: e.appName,
+                bundle_id: e.bundleID,
+                cleanup_level: e.cleanupLevel,
+                language: e.language
+            )
+        })
+        let body = try JSONEncoder().encode(payload)
+        let (data, status) = try await post(path: "/v1/sessions", body: body, session: session)
+        if status == 401 { throw APIError.invalidSession }
+        guard status == 200 else {
+            throw APIError.http(status, String(data: data, encoding: .utf8) ?? "")
+        }
+    }
+
     // MARK: - Avatar
 
     func uploadAvatar(pngData: Data, session: String) async throws {

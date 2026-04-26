@@ -88,6 +88,7 @@ export async function upsertUserByEmail(
     week_start: weekStart,
     stripe_customer_id: null,
     stripe_subscription_id: null,
+    avatar_data: null,
     created_at: now,
     updated_at: now,
   };

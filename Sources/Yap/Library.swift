@@ -10,6 +10,9 @@ struct RecordingEntry: Codable, Identifiable, Hashable {
     let wordCount: Int
     let appName: String?
     let bundleID: String?
+    let cleanupLevel: String?
+    let language: String?
+    var syncedAt: Date?
 }
 
 @MainActor
@@ -35,15 +38,18 @@ final class Library: ObservableObject {
         load()
     }
 
+    @discardableResult
     func record(
         raw: String,
         final: String,
         duration: TimeInterval,
         appName: String?,
-        bundleID: String?
-    ) {
+        bundleID: String?,
+        cleanupLevel: String?,
+        language: String?
+    ) -> RecordingEntry? {
         let wc = final.split(whereSeparator: { $0.isWhitespace }).count
-        guard wc > 0 else { return }
+        guard wc > 0 else { return nil }
         let entry = RecordingEntry(
             id: UUID(),
             timestamp: Date(),
@@ -52,11 +58,24 @@ final class Library: ObservableObject {
             durationSeconds: max(0, duration),
             wordCount: wc,
             appName: appName,
-            bundleID: bundleID
+            bundleID: bundleID,
+            cleanupLevel: cleanupLevel,
+            language: language,
+            syncedAt: nil
         )
         entries.insert(entry, at: 0)
         if entries.count > maxEntries {
             entries = Array(entries.prefix(maxEntries))
+        }
+        save()
+        return entry
+    }
+
+    func markSynced(ids: [UUID]) {
+        let idSet = Set(ids)
+        let now = Date()
+        for i in entries.indices where idSet.contains(entries[i].id) {
+            entries[i].syncedAt = now
         }
         save()
     }
