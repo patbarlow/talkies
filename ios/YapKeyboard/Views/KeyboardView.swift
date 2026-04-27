@@ -12,7 +12,6 @@ enum KeyboardState: Equatable {
 }
 
 struct KeyboardView: View {
-    // Injected by KeyboardViewController so SwiftUI can call UIKit methods
     let advanceToNextKeyboard: () -> Void
     let insertText: (String) -> Void
     let hasFullAccess: Bool
@@ -23,14 +22,19 @@ struct KeyboardView: View {
 
     @State private var state: KeyboardState = .idle
     @State private var recordingStart: Date?
-    @State private var isDraggingMic = false
+    @State private var pulsing = false
 
     private let minimumRecordingDuration: TimeInterval = 0.5
 
     var body: some View {
         VStack(spacing: 0) {
-            centralArea
+            // State-specific info area fills remaining space
+            infoArea
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+            // Mic button is always in the layout so the DragGesture
+            // persists through state transitions and onEnded always fires.
+            micRow
 
             toolbar
                 .frame(height: 44)
@@ -39,198 +43,204 @@ struct KeyboardView: View {
         .onAppear(perform: checkInitialState)
     }
 
-    // MARK: - Central area
+    // MARK: - Info area (state-specific, above the mic button)
 
     @ViewBuilder
-    private var centralArea: some View {
+    private var infoArea: some View {
         switch state {
         case .notSignedIn:
-            notSignedInView
+            VStack(spacing: 10) {
+                Image(systemName: "person.crop.circle.badge.exclamationmark")
+                    .font(.title3)
+                    .foregroundStyle(.secondary)
+                Text("Sign in to Yap")
+                    .font(.subheadline.weight(.medium))
+                Button("Open Yap") { openMainApp() }
+                    .buttonStyle(.bordered)
+                    .tint(.mint)
+                    .controlSize(.small)
+            }
+            .padding(.horizontal)
 
         case .noFullAccess:
-            noFullAccessView
+            VStack(spacing: 6) {
+                Image(systemName: "mic.slash.fill")
+                    .font(.title3)
+                    .foregroundStyle(.secondary)
+                Text("Enable Full Access")
+                    .font(.subheadline.weight(.medium))
+                Text("Settings → General → Keyboard → Yap → Allow Full Access")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 20)
+            }
 
         case .idle:
-            idleView
+            VStack(spacing: 3) {
+                Text("Hold to record")
+                    .font(.subheadline.weight(.medium))
+                Text("Release to transcribe & insert")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+            }
 
         case .recording:
-            recordingView
+            VStack(spacing: 8) {
+                WaveformView(bars: audioLevels.bars)
+                    .frame(height: 36)
+                    .padding(.horizontal, 20)
+                Text("Release to stop")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
 
         case .processing:
-            processingView
+            VStack(spacing: 8) {
+                ProcessingDots()
+                Text("Transcribing…")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
 
         case .result(let text):
-            resultView(text: text)
+            VStack(spacing: 6) {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.title3)
+                    .foregroundStyle(.mint)
+                Text(text)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 24)
+            }
+            .task {
+                try? await Task.sleep(for: .seconds(1.5))
+                if case .result = state { state = .idle }
+            }
 
         case .error(let message):
-            errorView(message: message)
+            VStack(spacing: 6) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.title3)
+                    .foregroundStyle(.orange)
+                Text(message)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 20)
+                Button("Dismiss") { state = .idle }
+                    .font(.caption)
+                    .foregroundStyle(.mint)
+            }
         }
     }
 
-    // MARK: - State views
+    // MARK: - Mic row (always visible so DragGesture survives state changes)
 
-    private var notSignedInView: some View {
-        VStack(spacing: 10) {
-            Image(systemName: "person.crop.circle.badge.exclamationmark")
-                .font(.largeTitle)
-                .foregroundStyle(.secondary)
-            Text("Sign in to Yap")
-                .font(.callout.weight(.medium))
-            Text("Open the Yap app to sign in, then come back here.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 24)
-            Button("Open Yap") { openMainApp() }
-                .buttonStyle(.bordered)
-                .tint(.mint)
-                .controlSize(.small)
-        }
-    }
-
-    private var noFullAccessView: some View {
-        VStack(spacing: 10) {
-            Image(systemName: "mic.slash.fill")
-                .font(.largeTitle)
-                .foregroundStyle(.secondary)
-            Text("Allow Full Access")
-                .font(.callout.weight(.medium))
-            Text("Settings → General → Keyboard → Keyboards → Yap → Allow Full Access")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 20)
-        }
-    }
-
-    private var idleView: some View {
-        VStack(spacing: 8) {
-            micButton
-            Text("Hold to dictate")
-                .font(.caption)
-                .foregroundStyle(.tertiary)
-        }
-    }
-
-    private var recordingView: some View {
-        VStack(spacing: 12) {
-            WaveformView(bars: audioLevels.bars)
-                .frame(height: 48)
-                .padding(.horizontal, 32)
-            Text("Release to transcribe")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
-    }
-
-    private var processingView: some View {
-        VStack(spacing: 12) {
-            ProcessingDots()
-            Text("Transcribing…")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
-    }
-
-    private func resultView(text: String) -> some View {
-        VStack(spacing: 8) {
-            Image(systemName: "checkmark.circle.fill")
-                .font(.title2)
-                .foregroundStyle(.mint)
-            Text(text)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .lineLimit(2)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 24)
-        }
-        .task {
-            try? await Task.sleep(for: .seconds(1.5))
-            if case .result = state { state = .idle }
-        }
-    }
-
-    private func errorView(message: String) -> some View {
-        VStack(spacing: 8) {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .font(.title2)
-                .foregroundStyle(.orange)
-            Text(message)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 20)
-            Button("Dismiss") { state = .idle }
-                .font(.caption)
-                .foregroundStyle(.mint)
-        }
-    }
-
-    // MARK: - Mic button
-
-    private var micButton: some View {
+    private var micRow: some View {
         ZStack {
+            // Expanding pulse ring shown only while recording
             Circle()
-                .fill(isDraggingMic ? Color.mint : Color.mint.opacity(0.15))
-                .frame(width: 64, height: 64)
-                .animation(.easeInOut(duration: 0.1), value: isDraggingMic)
+                .strokeBorder(Color.mint.opacity(0.35), lineWidth: 2)
+                .frame(width: pulsing ? 84 : 62, height: pulsing ? 84 : 62)
+                .opacity(pulsing ? 0 : 1)
+                .animation(
+                    state == .recording
+                        ? .easeOut(duration: 1.1).repeatForever(autoreverses: false)
+                        : .linear(duration: 0.15),
+                    value: pulsing
+                )
 
-            Image(systemName: isDraggingMic ? "stop.fill" : "mic.fill")
-                .font(.title2)
-                .foregroundStyle(isDraggingMic ? .white : .mint)
-                .animation(.easeInOut(duration: 0.1), value: isDraggingMic)
+            // Main button circle
+            Circle()
+                .fill(micFill)
+                .frame(width: 58, height: 58)
+                .shadow(color: state == .recording ? Color.mint.opacity(0.35) : .clear, radius: 8, y: 2)
+                .animation(.spring(response: 0.25, dampingFraction: 0.7), value: state == .recording)
+
+            Image(systemName: micIcon)
+                .font(.system(size: 21, weight: .medium))
+                .foregroundStyle(micIconColor)
+                .contentTransition(.symbolEffect(.replace))
         }
+        .frame(height: 72)
+        .contentShape(Rectangle())
         .gesture(
             DragGesture(minimumDistance: 0)
                 .onChanged { _ in
-                    if !isDraggingMic {
-                        isDraggingMic = true
-                        startRecording()
-                    }
+                    guard case .idle = state else { return }
+                    startRecording()
                 }
                 .onEnded { _ in
-                    isDraggingMic = false
                     stopRecording()
                 }
         )
+        .allowsHitTesting(state != .processing)
+        .onChange(of: state) { _, new in
+            pulsing = (new == .recording)
+        }
+    }
+
+    private var micFill: Color {
+        switch state {
+        case .recording: return .mint
+        case .processing: return Color(uiColor: .tertiarySystemFill)
+        default: return Color.mint.opacity(0.12)
+        }
+    }
+
+    private var micIcon: String {
+        switch state {
+        case .recording: return "stop.fill"
+        case .processing: return "ellipsis"
+        default: return "mic.fill"
+        }
+    }
+
+    private var micIconColor: Color {
+        switch state {
+        case .recording: return .white
+        case .processing: return Color(uiColor: .tertiaryLabel)
+        default: return .mint
+        }
     }
 
     // MARK: - Toolbar
 
     private var toolbar: some View {
         HStack(spacing: 0) {
-            // Globe: switch to next keyboard
             Button(action: advanceToNextKeyboard) {
                 Image(systemName: "globe")
-                    .font(.body)
+                    .font(.system(size: 17))
                     .foregroundStyle(.secondary)
                     .frame(width: 44, height: 44)
             }
 
             Spacer()
 
-            // Language code, or cleanup level while idle
             if case .idle = state {
-                HStack(spacing: 6) {
+                HStack(spacing: 5) {
                     Text(settings.transcriptionLanguage.whisperCode.uppercased())
                         .font(.caption.monospaced())
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(.tertiary)
                     if settings.cleanupLevel != .off {
                         Text("·")
-                            .foregroundStyle(.tertiary)
+                            .foregroundStyle(Color(uiColor: .quaternaryLabel))
                         Text(settings.cleanupLevel.label)
                             .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(.tertiary)
                     }
                 }
+                .transition(.opacity)
             }
 
             Spacer()
 
-            // Gear: open main app settings
             Button(action: openMainApp) {
-                Image(systemName: "gear")
-                    .font(.body)
+                Image(systemName: "gearshape")
+                    .font(.system(size: 17))
                     .foregroundStyle(.secondary)
                     .frame(width: 44, height: 44)
             }
@@ -242,15 +252,8 @@ struct KeyboardView: View {
     // MARK: - Recording lifecycle
 
     private func startRecording() {
-        guard case .idle = state else { return }
-        guard settings.sessionToken != nil else {
-            state = .notSignedIn
-            return
-        }
-        guard hasFullAccess else {
-            state = .noFullAccess
-            return
-        }
+        guard settings.sessionToken != nil else { state = .notSignedIn; return }
+        guard hasFullAccess else { state = .noFullAccess; return }
         do {
             try recorder.start()
             recordingStart = Date()
@@ -265,16 +268,16 @@ struct KeyboardView: View {
             _ = recorder.stop()
             return
         }
-
         let elapsed = recordingStart.map { Date().timeIntervalSince($0) } ?? 0
         guard let wavURL = recorder.stop(), elapsed >= minimumRecordingDuration else {
             state = .idle
             return
         }
-
         state = .processing
         Task { await transcribeAndInsert(wavURL: wavURL, duration: elapsed) }
     }
+
+    // MARK: - Transcription
 
     private func transcribeAndInsert(wavURL: URL, duration: TimeInterval) async {
         defer { try? FileManager.default.removeItem(at: wavURL) }
@@ -314,7 +317,6 @@ struct KeyboardView: View {
 
             insertText(trimmed + " ")
 
-            // Persist to library
             if let entry = Library.shared.record(
                 raw: raw.text,
                 final: trimmed,
@@ -353,9 +355,6 @@ struct KeyboardView: View {
 
     private func openMainApp() {
         guard let url = URL(string: "yapapp://") else { return }
-        // Keyboard extensions can't open URLs via standard API. This reaches
-        // through the responder chain to UIApplication, which works on iOS 17+
-        // when the keyboard has Full Access. Silently no-ops if unavailable.
         let sel = NSSelectorFromString("openURL:options:completionHandler:")
         let app = UIApplication.value(forKeyPath: "sharedApplication") as AnyObject
         if app.responds(to: sel) {

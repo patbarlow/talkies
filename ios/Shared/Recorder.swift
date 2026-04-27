@@ -2,16 +2,24 @@ import AVFoundation
 
 @MainActor
 final class Recorder: ObservableObject {
-    private let engine = AVAudioEngine()
+    private var engine: AVAudioEngine?
     private var file: AVAudioFile?
     private var outputURL: URL?
 
     func start() throws {
-        let audioSession = AVAudioSession.sharedInstance()
-        try audioSession.setCategory(.record, mode: .measurement, options: .duckOthers)
-        try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
+        // Tear down any previous engine before creating a new one.
+        // On iOS, AVAudioEngine must be recreated each session — reuse causes
+        // AVErrorCannotStartRecording on subsequent recordings.
+        engine?.inputNode.removeTap(onBus: 0)
+        engine?.stop()
+        engine = nil
 
-        let input = engine.inputNode
+        let session = AVAudioSession.sharedInstance()
+        try session.setCategory(.record, mode: .measurement, options: [.duckOthers, .allowBluetooth])
+        try session.setActive(true, options: .notifyOthersOnDeactivation)
+
+        let newEngine = AVAudioEngine()
+        let input = newEngine.inputNode
         let sourceFormat = input.outputFormat(forBus: 0)
 
         let url = FileManager.default.temporaryDirectory
@@ -27,21 +35,21 @@ final class Recorder: ObservableObject {
             AVLinearPCMIsBigEndianKey: false,
         ]
         file = try AVAudioFile(forWriting: url, settings: fileSettings)
-
         AudioLevels.shared.reset()
 
         input.installTap(onBus: 0, bufferSize: 4096, format: sourceFormat) { [weak self] buffer, _ in
             try? self?.file?.write(from: buffer)
-            let level = Self.rms(from: buffer)
-            AudioLevels.shared.pushFromAudioThread(rms: level)
+            AudioLevels.shared.pushFromAudioThread(rms: Self.rms(from: buffer))
         }
-        engine.prepare()
-        try engine.start()
+        newEngine.prepare()
+        try newEngine.start()
+        engine = newEngine
     }
 
     func stop() -> URL? {
-        engine.inputNode.removeTap(onBus: 0)
-        engine.stop()
+        engine?.inputNode.removeTap(onBus: 0)
+        engine?.stop()
+        engine = nil
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
         Task { @MainActor in AudioLevels.shared.reset() }
         let url = outputURL

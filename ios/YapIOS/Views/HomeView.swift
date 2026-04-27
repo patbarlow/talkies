@@ -11,9 +11,7 @@ struct HomeView: View {
     @State private var recordState: RecordState = .idle
     @State private var recordingStart: Date?
     @State private var lastResult: String?
-    @State private var isDragging = false
     @State private var errorMessage: String?
-    @State private var micPermission: AVAuthorizationStatus = .notDetermined
 
     private let minimumDuration: TimeInterval = 0.5
 
@@ -31,7 +29,6 @@ struct HomeView: View {
             }
             .navigationTitle("Yap")
             .task { await auth.refresh() }
-            .onAppear { micPermission = AVCaptureDevice.authorizationStatus(for: .audio) }
         }
     }
 
@@ -93,7 +90,7 @@ struct HomeView: View {
         .buttonStyle(.plain)
     }
 
-    // MARK: - Record card (standalone record-and-copy)
+    // MARK: - Record card
 
     private var recordCard: some View {
         VStack(spacing: 16) {
@@ -106,84 +103,87 @@ struct HomeView: View {
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
 
-            if let result = lastResult, recordState == .idle {
-                Text(result)
-                    .font(.callout)
-                    .padding(12)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color(uiColor: .secondarySystemBackground))
-                    .clipShape(RoundedRectangle(cornerRadius: 10))
-                Button {
-                    UIPasteboard.general.string = result
-                } label: {
-                    Label("Copy", systemImage: "doc.on.doc")
-                        .font(.subheadline)
-                }
-                .buttonStyle(.bordered)
-                .tint(.mint)
-            }
+            recordStateContent
 
             if let err = errorMessage {
                 Text(err)
                     .font(.caption)
                     .foregroundStyle(.red)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
 
-            micRecordButton
+            // Persistent mic circle — the DragGesture lives here so onEnded
+            // always fires even after the state view above switches content.
+            micCircle
         }
         .padding()
         .background(cardBackground)
     }
 
-    private var micRecordButton: some View {
-        Group {
-            switch recordState {
-            case .idle:
-                Button(action: {}) {
-                    ZStack {
-                        Circle()
-                            .fill(isDragging ? Color.mint : Color.mint.opacity(0.15))
-                            .frame(width: 72, height: 72)
-                        Image(systemName: isDragging ? "stop.fill" : "mic.fill")
-                            .font(.title)
-                            .foregroundStyle(isDragging ? .white : .mint)
+    @ViewBuilder
+    private var recordStateContent: some View {
+        switch recordState {
+        case .idle:
+            if let result = lastResult {
+                VStack(spacing: 8) {
+                    Text(result)
+                        .font(.callout)
+                        .padding(12)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color(uiColor: .secondarySystemBackground))
+                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                    Button {
+                        UIPasteboard.general.string = result
+                    } label: {
+                        Label("Copy", systemImage: "doc.on.doc")
+                            .font(.subheadline)
                     }
-                }
-                .simultaneousGesture(
-                    DragGesture(minimumDistance: 0)
-                        .onChanged { _ in
-                            if !isDragging {
-                                isDragging = true
-                                requestMicAndRecord()
-                            }
-                        }
-                        .onEnded { _ in
-                            isDragging = false
-                            stopAndProcess()
-                        }
-                )
-                .buttonStyle(.plain)
-
-            case .recording:
-                VStack(spacing: 8) {
-                    WaveformView(bars: audioLevels.bars)
-                        .frame(height: 36)
-                    Text("Recording… release to stop")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-
-            case .processing:
-                VStack(spacing: 8) {
-                    ProcessingDots()
-                    Text("Transcribing…")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    .buttonStyle(.bordered)
+                    .tint(.mint)
                 }
             }
+        case .recording:
+            VStack(spacing: 6) {
+                WaveformView(bars: audioLevels.bars)
+                    .frame(height: 36)
+                Text("Recording… release to stop")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        case .processing:
+            VStack(spacing: 6) {
+                ProcessingDots()
+                Text("Transcribing…")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
         }
+    }
+
+    private var micCircle: some View {
+        ZStack {
+            Circle()
+                .fill(recordState == .recording ? Color.mint : Color.mint.opacity(0.15))
+                .frame(width: 72, height: 72)
+            Image(systemName: recordState == .recording ? "stop.fill" : "mic.fill")
+                .font(.title)
+                .foregroundStyle(recordState == .recording ? Color.white : Color.mint)
+                .contentTransition(.symbolEffect(.replace))
+        }
+        .animation(.easeInOut(duration: 0.15), value: recordState == .recording)
+        .gesture(
+            DragGesture(minimumDistance: 0)
+                .onChanged { _ in
+                    guard recordState == .idle else { return }
+                    requestMicAndRecord()
+                }
+                .onEnded { _ in
+                    guard recordState == .recording else { return }
+                    stopAndProcess()
+                }
+        )
+        .allowsHitTesting(recordState != .processing)
         .frame(maxWidth: .infinity)
-        .animation(.easeInOut(duration: 0.15), value: recordState)
     }
 
     // MARK: - Recording actions
@@ -196,13 +196,12 @@ struct HomeView: View {
         case .notDetermined:
             AVCaptureDevice.requestAccess(for: .audio) { granted in
                 Task { @MainActor in
-                    self.micPermission = granted ? .authorized : .denied
                     if granted { self.startRecording() }
+                    else { self.errorMessage = "Microphone access denied. Enable it in Settings → Yap → Microphone." }
                 }
             }
         default:
             errorMessage = "Microphone access denied. Enable it in Settings → Yap → Microphone."
-            isDragging = false
         }
     }
 
@@ -215,15 +214,10 @@ struct HomeView: View {
             recordState = .recording
         } catch {
             errorMessage = "Couldn't start recording: \(error.localizedDescription)"
-            isDragging = false
         }
     }
 
     private func stopAndProcess() {
-        guard recordState == .recording else {
-            _ = recorder.stop()
-            return
-        }
         let elapsed = recordingStart.map { Date().timeIntervalSince($0) } ?? 0
         guard let wavURL = recorder.stop(), elapsed >= minimumDuration else {
             recordState = .idle
