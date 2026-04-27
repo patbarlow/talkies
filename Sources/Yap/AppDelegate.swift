@@ -4,6 +4,10 @@ import Carbon.HIToolbox
 import Sparkle
 import SwiftUI
 
+private final class SettingsHostingView: NSHostingView<SettingsView> {
+    override var mouseDownCanMoveWindow: Bool { false }
+}
+
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
@@ -385,7 +389,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func openSettings() {
         if settingsWindow == nil {
-            let view = NSHostingView(rootView: SettingsView())
+            let view = SettingsHostingView(rootView: SettingsView())
             let window = NSWindow(
                 contentRect: NSRect(x: 0, y: 0, width: 860, height: 580),
                 styleMask: [.titled, .closable, .miniaturizable, .fullSizeContentView],
@@ -395,7 +399,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             window.title = "Yap"
             window.titleVisibility = .hidden
             window.titlebarAppearsTransparent = true
-            window.isMovableByWindowBackground = true
+            window.isMovableByWindowBackground = false
             window.toolbarStyle = .unifiedCompact
             window.isReleasedWhenClosed = false
             window.backgroundColor = NSColor(name: nil) { appearance in
