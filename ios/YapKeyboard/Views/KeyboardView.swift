@@ -315,7 +315,7 @@ struct KeyboardView: View {
             insertText(trimmed + " ")
 
             // Persist to library
-            Library.shared.record(
+            if let entry = Library.shared.record(
                 raw: raw.text,
                 final: trimmed,
                 duration: duration,
@@ -323,7 +323,7 @@ struct KeyboardView: View {
                 bundleID: nil,
                 cleanupLevel: settings.cleanupLevel.rawValue,
                 language: settings.transcriptionLanguage.whisperCode
-            ).map { entry in
+            ) {
                 Task { await SessionSyncer.shared.syncEntry(entry) }
             }
 
@@ -359,7 +359,7 @@ struct KeyboardView: View {
         let sel = NSSelectorFromString("openURL:options:completionHandler:")
         let app = UIApplication.value(forKeyPath: "sharedApplication") as AnyObject
         if app.responds(to: sel) {
-            app.perform(sel, with: url, with: [:])
+            _ = app.perform(sel, with: url, with: [:])
         }
     }
 }

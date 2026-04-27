@@ -69,7 +69,7 @@ struct LibraryView: View {
     private var list: some View {
         List {
             if filtered.isEmpty && !searchText.isEmpty {
-                Text("No results for "\(searchText)"")
+                Text("No results for \"\(searchText)\"")
                     .foregroundStyle(.secondary)
                     .font(.callout)
             }
