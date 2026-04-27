@@ -82,7 +82,7 @@ struct SettingsView: View {
             let parts = name.split(separator: " ").prefix(2)
             return parts.compactMap { $0.first.map(String.init) }.joined().uppercased()
         }
-        return String(auth.currentUser?.email?.prefix(1) ?? "?").uppercased()
+        return String(auth.currentUser.map { String($0.email.prefix(1)) } ?? "?").uppercased()
     }
 
     private var appVersion: String {

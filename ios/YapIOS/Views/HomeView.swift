@@ -22,7 +22,7 @@ struct HomeView: View {
             ScrollView {
                 VStack(spacing: 24) {
                     if let user = auth.currentUser {
-                        usageCard(user: user)
+                        usageCard(user)
                     }
                     keyboardSetupCard
                     recordCard
@@ -262,7 +262,7 @@ struct HomeView: View {
             let trimmed = final.trimmingCharacters(in: .whitespacesAndNewlines)
             lastResult = trimmed
             UIPasteboard.general.string = trimmed
-            Library.shared.record(
+            if let entry = Library.shared.record(
                 raw: raw.text,
                 final: trimmed,
                 duration: duration,
@@ -270,7 +270,9 @@ struct HomeView: View {
                 bundleID: nil,
                 cleanupLevel: settings.cleanupLevel.rawValue,
                 language: settings.transcriptionLanguage.whisperCode
-            ).map { Task { await SessionSyncer.shared.syncEntry($0) } }
+            ) {
+                Task { await SessionSyncer.shared.syncEntry(entry) }
+            }
             await auth.refresh()
             recordState = .idle
         } catch APIError.invalidSession {

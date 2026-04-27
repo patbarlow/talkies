@@ -14,8 +14,8 @@ struct AccountView: View {
     var body: some View {
         List {
             if let user = auth.currentUser {
-                identitySection(user: user)
-                usageSection(user: user)
+                identitySection(user)
+                usageSection(user)
                 if user.plan == "free" {
                     upgradeSection
                 }
