@@ -64,5 +64,15 @@ The script (fully automated, ~3 min):
 
 **Version conventions:** use semantic versioning. Patch (0.1.x) for bug fixes and small tweaks; minor (0.x.0) for new user-facing features.
 
+## iOS app (ios/)
+
+The iOS app and keyboard extension live in `ios/` and use xcodegen to generate `YapIOS.xcodeproj` from `ios/project.yml` (the xcodeproj is gitignored). Xcode Cloud runs `ios/ci_scripts/ci_post_clone.sh` on clone to generate it before building.
+
+### Info.plist — important gotcha
+xcodegen **regenerates** both `ios/YapIOS/Info.plist` and `ios/YapKeyboard/Info.plist` from scratch when it runs. The files in git are effectively ignored during CI builds. **All required Info.plist keys must be declared in `ios/project.yml`** under each target's `info.properties` block — anything not listed there will be missing from the built binary and will fail App Store validation.
+
+### iOS release
+Xcode Cloud handles archiving and uploading to App Store Connect on every push to `main`.
+
 ## Installed app vs dev
 The installed release app and the debug binary coexist without conflict — different paths, no shared process state. Changes and testing on a branch never affect the installed version.
