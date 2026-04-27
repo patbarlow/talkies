@@ -73,6 +73,7 @@ targets:
     info:
       path: YapKeyboard/Info.plist
       properties:
+        CFBundleDisplayName: Yap Keyboard
         NSExtension:
           NSExtensionAttributes:
             IsASCIICapable: false
