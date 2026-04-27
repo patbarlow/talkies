@@ -6,6 +6,7 @@ import meRoutes from "./routes/me";
 import transcribeRoutes from "./routes/transcribe";
 import cleanupRoutes from "./routes/cleanup";
 import stripeRoutes from "./routes/stripe";
+import appleRoutes from "./routes/apple";
 import sessionsRoutes from "./routes/sessions";
 
 const app = new Hono<{ Bindings: Env }>();
@@ -18,6 +19,7 @@ app.route("/v1/me", meRoutes);
 app.route("/v1/transcribe", transcribeRoutes);
 app.route("/v1/cleanup", cleanupRoutes);
 app.route("/v1/stripe", stripeRoutes);
+app.route("/v1/apple", appleRoutes);
 app.route("/v1/sessions", sessionsRoutes);
 
 app.onError((err, c) => {
