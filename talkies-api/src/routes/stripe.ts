@@ -17,22 +17,11 @@ app.post("/checkout", requireAuth, async (c) => {
 
   let customerId = user.stripe_customer_id;
   if (!customerId) {
-    const customerRes = await fetch("https://api.stripe.com/v1/customers", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${c.env.STRIPE_SECRET_KEY}`,
-        "Content-Type": "application/x-www-form-urlencoded",
-      },
-      body: new URLSearchParams({
-        email: user.email ?? "",
-        "metadata[user_id]": user.id,
-      }).toString(),
-    });
-    if (!customerRes.ok) {
-      return c.json({ error: "stripe_error", detail: await customerRes.text() }, 502);
+    const result = await getOrCreateStripeCustomer(c.env.STRIPE_SECRET_KEY, user.email, user.id);
+    if ("error" in result) {
+      return c.json({ error: "stripe_error", detail: result.error }, 502);
     }
-    const customer = (await customerRes.json()) as { id: string };
-    customerId = customer.id;
+    customerId = result.customerId;
     await setStripeCustomerId(c.env.DB, user.id, customerId);
   }
 
@@ -102,6 +91,49 @@ app.post("/webhook", async (c) => {
 
   return c.json({ received: true });
 });
+
+/**
+ * Returns an existing Stripe customer for the given email (across all products
+ * on the account) or creates a new one. This keeps a single customer record
+ * per email so the Stripe portal shows all subscriptions in one place.
+ */
+async function getOrCreateStripeCustomer(
+  secretKey: string,
+  email: string,
+  userId: string,
+): Promise<{ customerId: string } | { error: string }> {
+  const headers = {
+    Authorization: `Bearer ${secretKey}`,
+    "Content-Type": "application/x-www-form-urlencoded",
+  };
+
+  // Search for an existing customer with this email.
+  const searchRes = await fetch(
+    `https://api.stripe.com/v1/customers/search?query=${encodeURIComponent(`email:"${email}"`)}`,
+    { headers },
+  );
+  if (searchRes.ok) {
+    const result = (await searchRes.json()) as { data: { id: string }[] };
+    if (result.data.length > 0 && result.data[0]) {
+      return { customerId: result.data[0].id };
+    }
+  }
+
+  // No existing customer — create one.
+  const createRes = await fetch("https://api.stripe.com/v1/customers", {
+    method: "POST",
+    headers,
+    body: new URLSearchParams({
+      email,
+      "metadata[user_id]": userId,
+    }).toString(),
+  });
+  if (!createRes.ok) {
+    return { error: await createRes.text() };
+  }
+  const customer = (await createRes.json()) as { id: string };
+  return { customerId: customer.id };
+}
 
 /**
  * Stripe signs the webhook body with HMAC-SHA256 using the endpoint secret.
