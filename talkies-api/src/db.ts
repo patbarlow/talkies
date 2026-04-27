@@ -9,6 +9,7 @@ export interface User {
   week_start: string;
   stripe_customer_id: string | null;
   stripe_subscription_id: string | null;
+  apple_original_transaction_id: string | null;
   avatar_data: string | null;
   created_at: string;
   updated_at: string;
@@ -88,6 +89,7 @@ export async function upsertUserByEmail(
     week_start: weekStart,
     stripe_customer_id: null,
     stripe_subscription_id: null,
+    apple_original_transaction_id: null,
     avatar_data: null,
     created_at: now,
     updated_at: now,
@@ -152,6 +154,50 @@ export async function setStripeCustomerId(
   await db
     .prepare("UPDATE users SET stripe_customer_id = ?, updated_at = ? WHERE id = ?")
     .bind(customerId, nowISO(), userId)
+    .run();
+}
+
+/**
+ * Set a user's plan and record the Apple original transaction ID.
+ * Used after a successful in-app purchase on iOS.
+ */
+export async function updatePlanForUser(
+  db: D1Database,
+  userId: string,
+  plan: "free" | "pro",
+  appleOriginalTransactionId: string,
+): Promise<User> {
+  await db
+    .prepare(
+      `UPDATE users
+         SET plan = ?, apple_original_transaction_id = ?, updated_at = ?
+       WHERE id = ?`,
+    )
+    .bind(plan, appleOriginalTransactionId, nowISO(), userId)
+    .run();
+  const updated = await db
+    .prepare("SELECT * FROM users WHERE id = ?")
+    .bind(userId)
+    .first<User>();
+  if (!updated) throw new Error("user not found after update");
+  return updated;
+}
+
+/**
+ * Look up a user by their Apple original transaction ID and update their plan.
+ * Used by the App Store Server Notifications webhook for renewals/cancellations.
+ */
+export async function updatePlanByAppleTransaction(
+  db: D1Database,
+  originalTransactionId: string,
+  plan: "free" | "pro",
+): Promise<void> {
+  await db
+    .prepare(
+      `UPDATE users SET plan = ?, updated_at = ?
+       WHERE apple_original_transaction_id = ?`,
+    )
+    .bind(plan, nowISO(), originalTransactionId)
     .run();
 }
 

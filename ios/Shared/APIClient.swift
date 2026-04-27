@@ -1,0 +1,327 @@
+import Foundation
+
+final class APIClient {
+    static let shared = APIClient()
+
+    static let defaultBaseURL = URL(string: "https://talkies-api.pat-barlow.workers.dev")!
+
+    private var baseURL: URL {
+        if let override = UserDefaults.standard.string(forKey: "APIBaseURLOverride"),
+           let url = URL(string: override) {
+            return url
+        }
+        return Self.defaultBaseURL
+    }
+
+    private init() {}
+
+    // MARK: - Email auth
+
+    func requestEmailCode(email: String) async throws {
+        let body = try JSONSerialization.data(withJSONObject: ["email": email])
+        let (data, status) = try await post(path: "/auth/email/start", body: body, session: nil)
+
+        if status == 429 {
+            struct RL: Decodable { let retry_after: Int? }
+            let retry = (try? JSONDecoder().decode(RL.self, from: data))?.retry_after ?? 30
+            throw APIError.rateLimited(retryAfter: retry)
+        }
+        guard status == 200 else {
+            throw APIError.http(status, String(data: data, encoding: .utf8) ?? "")
+        }
+    }
+
+    struct AuthResponse: Decodable {
+        let session: String
+        let user: PublicUser
+    }
+
+    func verifyEmailCode(email: String, code: String, fullName: String?) async throws -> AuthResponse {
+        var payload: [String: String] = ["email": email, "code": code]
+        if let fullName, !fullName.isEmpty { payload["fullName"] = fullName }
+        let body = try JSONSerialization.data(withJSONObject: payload)
+        let (data, status) = try await post(path: "/auth/email/verify", body: body, session: nil)
+
+        if status == 400 {
+            struct Err: Decodable { let error: String? }
+            switch (try? JSONDecoder().decode(Err.self, from: data))?.error {
+            case "invalid_code":      throw APIError.invalidCode
+            case "code_expired":      throw APIError.codeExpired
+            case "too_many_attempts": throw APIError.tooManyAttempts
+            case "no_code":           throw APIError.noCode
+            default: throw APIError.http(status, String(data: data, encoding: .utf8) ?? "")
+            }
+        }
+        guard status == 200 else {
+            throw APIError.http(status, String(data: data, encoding: .utf8) ?? "")
+        }
+        do {
+            return try JSONDecoder().decode(AuthResponse.self, from: data)
+        } catch {
+            throw APIError.decoding(error)
+        }
+    }
+
+    // MARK: - Me
+
+    func me(session: String) async throws -> PublicUser {
+        let (data, status) = try await get(path: "/v1/me", session: session)
+        if status == 401 { throw APIError.invalidSession }
+        guard status == 200 else {
+            throw APIError.http(status, String(data: data, encoding: .utf8) ?? "")
+        }
+        do {
+            return try JSONDecoder().decode(PublicUser.self, from: data)
+        } catch {
+            throw APIError.decoding(error)
+        }
+    }
+
+    func updateName(_ name: String, session: String) async throws -> PublicUser {
+        let body = try JSONSerialization.data(withJSONObject: ["name": name])
+        let (data, status) = try await request(method: "PATCH", path: "/v1/me", body: body, session: session)
+        if status == 401 { throw APIError.invalidSession }
+        guard status == 200 else {
+            throw APIError.http(status, String(data: data, encoding: .utf8) ?? "")
+        }
+        do {
+            return try JSONDecoder().decode(PublicUser.self, from: data)
+        } catch {
+            throw APIError.decoding(error)
+        }
+    }
+
+    // MARK: - Apple IAP verification
+
+    func verifyAppleTransaction(transactionID: UInt64, session: String) async throws {
+        let payload = try JSONSerialization.data(withJSONObject: ["transactionId": String(transactionID)])
+        let (data, status) = try await post(path: "/v1/apple/verify", body: payload, session: session)
+        if status == 401 { throw APIError.invalidSession }
+        guard status == 200 else {
+            throw APIError.http(status, String(data: data, encoding: .utf8) ?? "")
+        }
+    }
+
+    // MARK: - Stripe (web fallback)
+
+    struct CheckoutResponse: Decodable { let url: String }
+
+    func stripeCheckout(session: String) async throws -> URL {
+        let (data, status) = try await post(path: "/v1/stripe/checkout", body: Data(), session: session)
+        if status == 401 { throw APIError.invalidSession }
+        guard status == 200 else {
+            throw APIError.http(status, String(data: data, encoding: .utf8) ?? "")
+        }
+        do {
+            let decoded = try JSONDecoder().decode(CheckoutResponse.self, from: data)
+            guard let url = URL(string: decoded.url) else {
+                throw APIError.decoding(NSError(domain: "yap", code: 0))
+            }
+            return url
+        } catch {
+            throw APIError.decoding(error)
+        }
+    }
+
+    // MARK: - Transcribe
+
+    struct TranscribeResponse: Decodable {
+        let text: String
+        let wordCount: Int
+    }
+
+    func transcribe(
+        audio: URL,
+        prompt: String?,
+        language: String,
+        session: String
+    ) async throws -> TranscribeResponse {
+        let boundary = "Yap-\(UUID().uuidString)"
+        var body = Data()
+        let audioData = try Data(contentsOf: audio)
+        body.appendFile(boundary: boundary, name: "audio", filename: "audio.wav", contentType: "audio/wav", data: audioData)
+        body.appendField(boundary: boundary, name: "language", value: language)
+        if let prompt, !prompt.isEmpty {
+            body.appendField(boundary: boundary, name: "prompt", value: prompt)
+        }
+        body.appendString("--\(boundary)--\r\n")
+
+        let url = baseURL.appendingPathComponent("/v1/transcribe")
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(session)", forHTTPHeaderField: "Authorization")
+        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+
+        let (data, response): (Data, URLResponse)
+        do {
+            (data, response) = try await URLSession.shared.upload(for: request, from: body)
+        } catch {
+            throw APIError.transport(error)
+        }
+        let status = (response as? HTTPURLResponse)?.statusCode ?? -1
+
+        if status == 401 { throw APIError.invalidSession }
+        if status == 402 {
+            struct LimitError: Decodable { let limit: Int?; let used: Int? }
+            if let err = try? JSONDecoder().decode(LimitError.self, from: data) {
+                throw APIError.weeklyLimitReached(limit: err.limit ?? 0, used: err.used ?? 0)
+            }
+            throw APIError.weeklyLimitReached(limit: 0, used: 0)
+        }
+        guard status == 200 else {
+            throw APIError.http(status, String(data: data, encoding: .utf8) ?? "")
+        }
+        do {
+            return try JSONDecoder().decode(TranscribeResponse.self, from: data)
+        } catch {
+            throw APIError.decoding(error)
+        }
+    }
+
+    // MARK: - Cleanup
+
+    struct CleanupResponse: Decodable { let text: String }
+
+    func cleanup(
+        text: String,
+        appName: String?,
+        appBundleID: String?,
+        level: String,
+        tone: String?,
+        spellingVariant: String?,
+        session: String
+    ) async throws -> String {
+        var payload: [String: String] = ["text": text, "level": level]
+        if let appName { payload["appName"] = appName }
+        if let appBundleID { payload["appBundleID"] = appBundleID }
+        if let tone { payload["tone"] = tone }
+        if let spellingVariant { payload["spellingVariant"] = spellingVariant }
+        let body = try JSONSerialization.data(withJSONObject: payload)
+
+        let (data, status) = try await post(path: "/v1/cleanup", body: body, session: session)
+        if status == 401 { throw APIError.invalidSession }
+        guard status == 200 else {
+            throw APIError.http(status, String(data: data, encoding: .utf8) ?? "")
+        }
+        do {
+            return try JSONDecoder().decode(CleanupResponse.self, from: data).text
+        } catch {
+            throw APIError.decoding(error)
+        }
+    }
+
+    // MARK: - Sessions
+
+    func syncSessions(events: [RecordingEntry], session: String) async throws {
+        struct Event: Encodable {
+            let id: String
+            let recorded_at: String
+            let word_count: Int
+            let duration_seconds: Double
+            let app_name: String?
+            let bundle_id: String?
+            let cleanup_level: String?
+            let language: String?
+        }
+        struct Payload: Encodable { let sessions: [Event] }
+
+        let iso = ISO8601DateFormatter()
+        let payload = Payload(sessions: events.map { e in
+            Event(
+                id: e.id.uuidString,
+                recorded_at: iso.string(from: e.timestamp),
+                word_count: e.wordCount,
+                duration_seconds: e.durationSeconds,
+                app_name: e.appName,
+                bundle_id: e.bundleID,
+                cleanup_level: e.cleanupLevel,
+                language: e.language
+            )
+        })
+        let body = try JSONEncoder().encode(payload)
+        let (data, status) = try await post(path: "/v1/sessions", body: body, session: session)
+        if status == 401 { throw APIError.invalidSession }
+        guard status == 200 else {
+            throw APIError.http(status, String(data: data, encoding: .utf8) ?? "")
+        }
+    }
+
+    // MARK: - Avatar
+
+    func uploadAvatar(pngData: Data, session: String) async throws {
+        let base64 = pngData.base64EncodedString()
+        let payload = try JSONSerialization.data(withJSONObject: ["avatar": base64])
+        let (data, status) = try await request(method: "PUT", path: "/v1/me/avatar", body: payload, session: session)
+        if status == 401 { throw APIError.invalidSession }
+        guard status == 200 else {
+            throw APIError.http(status, String(data: data, encoding: .utf8) ?? "")
+        }
+    }
+
+    struct AvatarResponse: Decodable { let avatar: String }
+
+    func downloadAvatar(session: String) async throws -> Data {
+        let (data, status) = try await get(path: "/v1/me/avatar", session: session)
+        if status == 401 { throw APIError.invalidSession }
+        guard status == 200 else { throw APIError.http(status, "") }
+        let response = try JSONDecoder().decode(AvatarResponse.self, from: data)
+        guard let decoded = Data(base64Encoded: response.avatar) else {
+            throw APIError.decoding(DecodingError.dataCorrupted(.init(codingPath: [], debugDescription: "bad base64")))
+        }
+        return decoded
+    }
+
+    // MARK: - Low-level
+
+    private func get(path: String, session: String?) async throws -> (Data, Int) {
+        var request = URLRequest(url: baseURL.appendingPathComponent(path))
+        request.httpMethod = "GET"
+        if let session { request.setValue("Bearer \(session)", forHTTPHeaderField: "Authorization") }
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            return (data, (response as? HTTPURLResponse)?.statusCode ?? -1)
+        } catch {
+            throw APIError.transport(error)
+        }
+    }
+
+    private func post(path: String, body: Data, session: String?) async throws -> (Data, Int) {
+        try await request(method: "POST", path: path, body: body, session: session)
+    }
+
+    private func request(
+        method: String,
+        path: String,
+        body: Data,
+        session: String?
+    ) async throws -> (Data, Int) {
+        var request = URLRequest(url: baseURL.appendingPathComponent(path))
+        request.httpMethod = method
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        if let session { request.setValue("Bearer \(session)", forHTTPHeaderField: "Authorization") }
+        do {
+            let (data, response) = try await URLSession.shared.upload(for: request, from: body)
+            return (data, (response as? HTTPURLResponse)?.statusCode ?? -1)
+        } catch {
+            throw APIError.transport(error)
+        }
+    }
+}
+
+private extension Data {
+    mutating func appendString(_ s: String) {
+        if let d = s.data(using: .utf8) { append(d) }
+    }
+    mutating func appendField(boundary: String, name: String, value: String) {
+        appendString("--\(boundary)\r\n")
+        appendString("Content-Disposition: form-data; name=\"\(name)\"\r\n\r\n")
+        appendString("\(value)\r\n")
+    }
+    mutating func appendFile(boundary: String, name: String, filename: String, contentType: String, data: Data) {
+        appendString("--\(boundary)\r\n")
+        appendString("Content-Disposition: form-data; name=\"\(name)\"; filename=\"\(filename)\"\r\n")
+        appendString("Content-Type: \(contentType)\r\n\r\n")
+        append(data)
+        appendString("\r\n")
+    }
+}
