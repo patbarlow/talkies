@@ -36,7 +36,7 @@
         <key>NSExtensionPointIdentifier</key>
         <string>com.apple.keyboard-service</string>
         <key>NSExtensionPrincipalClass</key>
-        <string>$(PRODUCT_MODULE_NAME).KeyboardViewController</string>
+        <string>KeyboardViewController</string>
     </dict>
     <key>NSMicrophoneUsageDescription</key>
     <string>Yap records your voice to transcribe speech to text.</string>
