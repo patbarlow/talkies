@@ -312,7 +312,7 @@ struct KeyboardView: View {
 
             Spacer()
 
-            Button(action: openMainApp) {
+            Button(action: { openMainApp() }) {
                 Image(systemName: "gearshape")
                     .font(.system(size: 17))
                     .foregroundStyle(.secondary)
