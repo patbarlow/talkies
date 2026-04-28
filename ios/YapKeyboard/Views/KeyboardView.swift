@@ -26,6 +26,7 @@ struct KeyboardView: View {
     @State private var pulsing = false
 
     private let minimumRecordingDuration: TimeInterval = 0.5
+    private let appWarmThreshold: TimeInterval = 180
 
     var body: some View {
         VStack(spacing: 0) {
@@ -328,6 +329,11 @@ struct KeyboardView: View {
     private func startRecording() {
         guard settings.sessionToken != nil else { state = .notSignedIn; return }
         guard hasFullAccess else { state = .noFullAccess; return }
+        if needsAppWarmup {
+            state = .needsAppActivation
+            openMainApp(warmup: true)
+            return
+        }
         do {
             try recorder.start()
             recordingStart = Date()
@@ -427,6 +433,8 @@ struct KeyboardView: View {
             state = .notSignedIn
         } else if !hasFullAccess {
             state = .noFullAccess
+        } else if needsAppWarmup {
+            state = .needsAppActivation
         } else {
             state = .idle
         }
