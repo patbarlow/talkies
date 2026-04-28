@@ -2,24 +2,29 @@ import AVFoundation
 
 @MainActor
 final class Recorder: ObservableObject {
+    // Engine and session are created once and kept alive for the lifetime of
+    // the Recorder. Recreating the engine or toggling setActive(false/true)
+    // between recordings causes AVAudioEngine.start() to throw error 'what'
+    // (com.apple.coreaudio.avfaudio 2003329396) on iOS keyboard extensions —
+    // the session reactivates but the input node reports a stale format before
+    // the hardware has re-initialized.
     private var engine: AVAudioEngine?
     private var file: AVAudioFile?
     private var outputURL: URL?
 
     func start() throws {
-        // Tear down any previous engine before creating a new one.
-        // On iOS, AVAudioEngine must be recreated each session — reuse causes
-        // AVErrorCannotStartRecording on subsequent recordings.
+        // Drop any tap from a previous recording before installing a new one.
         engine?.inputNode.removeTap(onBus: 0)
-        engine?.stop()
-        engine = nil
 
-        let session = AVAudioSession.sharedInstance()
-        try session.setCategory(.record, mode: .measurement, options: [.duckOthers, .allowBluetooth])
-        try session.setActive(true, options: .notifyOthersOnDeactivation)
+        if engine == nil {
+            let session = AVAudioSession.sharedInstance()
+            try session.setCategory(.record, mode: .measurement, options: [.duckOthers, .allowBluetooth])
+            try session.setActive(true, options: .notifyOthersOnDeactivation)
+            engine = AVAudioEngine()
+        }
 
-        let newEngine = AVAudioEngine()
-        let input = newEngine.inputNode
+        let eng = engine!
+        let input = eng.inputNode
         let sourceFormat = input.outputFormat(forBus: 0)
 
         let url = FileManager.default.temporaryDirectory
@@ -41,21 +46,13 @@ final class Recorder: ObservableObject {
             try? self?.file?.write(from: buffer)
             AudioLevels.shared.pushFromAudioThread(rms: Self.rms(from: buffer))
         }
-        newEngine.prepare()
-        try newEngine.start()
-        engine = newEngine
+        eng.prepare()
+        try eng.start()
     }
 
     func stop() -> URL? {
         engine?.inputNode.removeTap(onBus: 0)
         engine?.stop()
-        engine = nil
-        // Do NOT call setActive(false) here. Deactivating between recordings
-        // causes the next engine.start() to fail with 'what' (0x77686174):
-        // the session reactivates but the input node reports a stale format
-        // before the hardware has re-initialized. Keeping the session active
-        // between recordings avoids this; the system cleans it up when the
-        // keyboard extension is dismissed.
         Task { @MainActor in AudioLevels.shared.reset() }
         let url = outputURL
         file = nil

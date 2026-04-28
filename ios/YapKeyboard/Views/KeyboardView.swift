@@ -14,6 +14,7 @@ enum KeyboardState: Equatable {
 struct KeyboardView: View {
     let advanceToNextKeyboard: () -> Void
     let insertText: (String) -> Void
+    let deleteBackward: () -> Void
     let hasFullAccess: Bool
 
     @StateObject private var settings = SharedSettings.shared
@@ -28,28 +29,26 @@ struct KeyboardView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // State-specific info area fills remaining space
             infoArea
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-            // Mic button is always in the layout so the DragGesture
-            // persists through state transitions and onEnded always fires.
             micRow
 
-            toolbar
-                .frame(height: 44)
+            keyRow
+
+            bottomStrip
         }
-        .background(Color(uiColor: .systemBackground))
+        .background(Color(uiColor: .secondarySystemBackground))
         .onAppear(perform: checkInitialState)
     }
 
-    // MARK: - Info area (state-specific, above the mic button)
+    // MARK: - Info area
 
     @ViewBuilder
     private var infoArea: some View {
         switch state {
         case .notSignedIn:
-            VStack(spacing: 10) {
+            VStack(spacing: 8) {
                 Image(systemName: "person.crop.circle.badge.exclamationmark")
                     .font(.title3)
                     .foregroundStyle(.secondary)
@@ -63,7 +62,7 @@ struct KeyboardView: View {
             .padding(.horizontal)
 
         case .noFullAccess:
-            VStack(spacing: 6) {
+            VStack(spacing: 4) {
                 Image(systemName: "mic.slash.fill")
                     .font(.title3)
                     .foregroundStyle(.secondary)
@@ -77,7 +76,7 @@ struct KeyboardView: View {
             }
 
         case .idle:
-            VStack(spacing: 3) {
+            VStack(spacing: 2) {
                 Text("Hold to record")
                     .font(.subheadline.weight(.medium))
                 Text("Release to transcribe & insert")
@@ -86,17 +85,17 @@ struct KeyboardView: View {
             }
 
         case .recording:
-            VStack(spacing: 8) {
+            VStack(spacing: 6) {
                 WaveformView(bars: audioLevels.bars)
-                    .frame(height: 36)
-                    .padding(.horizontal, 20)
+                    .frame(height: 32)
+                    .padding(.horizontal, 24)
                 Text("Release to stop")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
 
         case .processing:
-            VStack(spacing: 8) {
+            VStack(spacing: 6) {
                 ProcessingDots()
                 Text("Transcribing…")
                     .font(.caption)
@@ -104,7 +103,7 @@ struct KeyboardView: View {
             }
 
         case .result(let text):
-            VStack(spacing: 6) {
+            VStack(spacing: 4) {
                 Image(systemName: "checkmark.circle.fill")
                     .font(.title3)
                     .foregroundStyle(.mint)
@@ -121,7 +120,7 @@ struct KeyboardView: View {
             }
 
         case .error(let message):
-            VStack(spacing: 6) {
+            VStack(spacing: 4) {
                 Image(systemName: "exclamationmark.triangle.fill")
                     .font(.title3)
                     .foregroundStyle(.orange)
@@ -137,14 +136,13 @@ struct KeyboardView: View {
         }
     }
 
-    // MARK: - Mic row (always visible so DragGesture survives state changes)
+    // MARK: - Mic row (persistent — gesture survives state changes)
 
     private var micRow: some View {
         ZStack {
-            // Expanding pulse ring shown only while recording
             Circle()
                 .strokeBorder(Color.mint.opacity(0.35), lineWidth: 2)
-                .frame(width: pulsing ? 84 : 62, height: pulsing ? 84 : 62)
+                .frame(width: pulsing ? 80 : 60, height: pulsing ? 80 : 60)
                 .opacity(pulsing ? 0 : 1)
                 .animation(
                     state == .recording
@@ -153,19 +151,18 @@ struct KeyboardView: View {
                     value: pulsing
                 )
 
-            // Main button circle
             Circle()
                 .fill(micFill)
-                .frame(width: 58, height: 58)
-                .shadow(color: state == .recording ? Color.mint.opacity(0.35) : .clear, radius: 8, y: 2)
+                .frame(width: 56, height: 56)
+                .shadow(color: state == .recording ? Color.mint.opacity(0.3) : .clear, radius: 8, y: 2)
                 .animation(.spring(response: 0.25, dampingFraction: 0.7), value: state == .recording)
 
             Image(systemName: micIcon)
-                .font(.system(size: 21, weight: .medium))
+                .font(.system(size: 20, weight: .medium))
                 .foregroundStyle(micIconColor)
                 .contentTransition(.symbolEffect(.replace))
         }
-        .frame(height: 72)
+        .frame(height: 68)
         .contentShape(Rectangle())
         .gesture(
             DragGesture(minimumDistance: 0)
@@ -178,16 +175,14 @@ struct KeyboardView: View {
                 }
         )
         .allowsHitTesting(state != .processing)
-        .onChange(of: state) { _, new in
-            pulsing = (new == .recording)
-        }
+        .onChange(of: state) { _, new in pulsing = (new == .recording) }
     }
 
     private var micFill: Color {
         switch state {
         case .recording: return .mint
         case .processing: return Color(uiColor: .tertiarySystemFill)
-        default: return Color.mint.opacity(0.12)
+        default: return Color(uiColor: .systemBackground)
         }
     }
 
@@ -207,33 +202,72 @@ struct KeyboardView: View {
         }
     }
 
-    // MARK: - Toolbar
+    // MARK: - Key row (space · backspace · return)
 
-    private var toolbar: some View {
+    private var keyRow: some View {
+        HStack(spacing: 6) {
+            keyButton(label: AnyView(
+                Text("space").font(.system(size: 15))
+            ), isWide: true) {
+                insertText(" ")
+            }
+
+            keyButton(label: AnyView(
+                Image(systemName: "delete.left").font(.system(size: 16))
+            )) {
+                deleteBackward()
+            }
+
+            keyButton(label: AnyView(
+                Image(systemName: "return").font(.system(size: 16))
+            )) {
+                insertText("\n")
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(Color(uiColor: .secondarySystemBackground))
+    }
+
+    private func keyButton(label: AnyView, isWide: Bool = false, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            label
+                .foregroundStyle(Color(uiColor: .label))
+                .frame(maxWidth: isWide ? .infinity : nil, minWidth: isWide ? nil : 46, minHeight: 40)
+                .background(
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(isWide ? Color(uiColor: .systemBackground) : Color(uiColor: .systemFill))
+                        .shadow(color: .black.opacity(0.2), radius: 0, x: 0, y: 1)
+                )
+        }
+        .buttonStyle(.plain)
+    }
+
+    // MARK: - Bottom strip (globe · lang info · gear)
+
+    private var bottomStrip: some View {
         HStack(spacing: 0) {
             Button(action: advanceToNextKeyboard) {
                 Image(systemName: "globe")
                     .font(.system(size: 17))
                     .foregroundStyle(.secondary)
-                    .frame(width: 44, height: 44)
+                    .frame(width: 44, height: 36)
             }
 
             Spacer()
 
             if case .idle = state {
-                HStack(spacing: 5) {
+                HStack(spacing: 4) {
                     Text(settings.transcriptionLanguage.whisperCode.uppercased())
-                        .font(.caption.monospaced())
-                        .foregroundStyle(.tertiary)
+                        .font(.caption2.monospaced())
+                        .foregroundStyle(Color(uiColor: .quaternaryLabel))
                     if settings.cleanupLevel != .off {
-                        Text("·")
-                            .foregroundStyle(Color(uiColor: .quaternaryLabel))
+                        Text("·").foregroundStyle(Color(uiColor: .quaternaryLabel))
                         Text(settings.cleanupLevel.label)
-                            .font(.caption)
-                            .foregroundStyle(.tertiary)
+                            .font(.caption2)
+                            .foregroundStyle(Color(uiColor: .quaternaryLabel))
                     }
                 }
-                .transition(.opacity)
             }
 
             Spacer()
@@ -242,10 +276,11 @@ struct KeyboardView: View {
                 Image(systemName: "gearshape")
                     .font(.system(size: 17))
                     .foregroundStyle(.secondary)
-                    .frame(width: 44, height: 44)
+                    .frame(width: 44, height: 36)
             }
         }
         .padding(.horizontal, 4)
+        .frame(height: 36)
         .background(Color(uiColor: .secondarySystemBackground))
     }
 

@@ -10,18 +10,10 @@ final class KeyboardViewController: UIInputViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
 
-        let keyboardView = KeyboardView(
-            advanceToNextKeyboard: { [weak self] in
-                self?.advanceToNextInputMode()
-            },
-            insertText: { [weak self] text in
-                self?.textDocumentProxy.insertText(text)
-            },
-            hasFullAccess: hasFullAccess
-        )
+        let keyboardView = makeKeyboardView()
 
         let hosting = UIHostingController(rootView: keyboardView)
-        hosting.view.backgroundColor = .systemBackground
+        hosting.view.backgroundColor = .clear
         hosting.view.translatesAutoresizingMaskIntoConstraints = false
 
         addChild(hosting)
@@ -64,16 +56,19 @@ final class KeyboardViewController: UIInputViewController {
         }
     }
 
-    // Re-check full-access when the extension becomes active (user may have
-    // just enabled it in Settings while the keyboard was already loaded).
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
         if hasFullAccess != hostingController?.rootView.hasFullAccess {
-            hostingController?.rootView = KeyboardView(
-                advanceToNextKeyboard: { [weak self] in self?.advanceToNextInputMode() },
-                insertText: { [weak self] text in self?.textDocumentProxy.insertText(text) },
-                hasFullAccess: hasFullAccess
-            )
+            hostingController?.rootView = makeKeyboardView()
         }
+    }
+
+    private func makeKeyboardView() -> KeyboardView {
+        KeyboardView(
+            advanceToNextKeyboard: { [weak self] in self?.advanceToNextInputMode() },
+            insertText: { [weak self] text in self?.textDocumentProxy.insertText(text) },
+            deleteBackward: { [weak self] in self?.textDocumentProxy.deleteBackward() },
+            hasFullAccess: hasFullAccess
+        )
     }
 }
