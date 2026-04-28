@@ -4,6 +4,7 @@ import AVFoundation
 enum KeyboardState: Equatable {
     case notSignedIn
     case noFullAccess
+    case needsAppActivation
     case idle
     case recording
     case processing
@@ -25,6 +26,7 @@ struct KeyboardView: View {
     @State private var pulsing = false
 
     private let minimumRecordingDuration: TimeInterval = 0.5
+    private let appWarmThreshold: TimeInterval = 180
 
     var body: some View {
         VStack(spacing: 0) {
@@ -89,6 +91,24 @@ struct KeyboardView: View {
                     .foregroundStyle(.tertiary)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 20)
+            }
+
+        case .needsAppActivation:
+            VStack(spacing: 8) {
+                Image(systemName: "arrow.right.circle.fill")
+                    .font(.title3)
+                    .foregroundStyle(.mint)
+                Text("Activate microphone once")
+                    .font(.subheadline.weight(.medium))
+                Text("Apple may require opening Yap first. Tap below, then swipe back here and try recording again.")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 20)
+                Button("Open Yap") { openMainApp() }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.mint)
+                    .controlSize(.small)
             }
 
         case .idle:
@@ -183,7 +203,7 @@ struct KeyboardView: View {
         .gesture(
             DragGesture(minimumDistance: 0)
                 .onChanged { _ in
-                    guard case .idle = state else { return }
+                    guard canAttemptRecording else { return }
                     startRecording()
                 }
                 .onEnded { _ in
@@ -215,6 +235,15 @@ struct KeyboardView: View {
         case .recording: return .white
         case .processing: return Color(uiColor: .tertiaryLabel)
         default: return .mint
+        }
+    }
+
+    private var canAttemptRecording: Bool {
+        switch state {
+        case .idle, .needsAppActivation:
+            return true
+        default:
+            return false
         }
     }
 
@@ -300,11 +329,19 @@ struct KeyboardView: View {
     private func startRecording() {
         guard settings.sessionToken != nil else { state = .notSignedIn; return }
         guard hasFullAccess else { state = .noFullAccess; return }
+        if needsAppWarmup {
+            state = .needsAppActivation
+            return
+        }
         do {
             try recorder.start()
             recordingStart = Date()
             state = .recording
         } catch {
+            if isKeyboardMicActivationError(error) {
+                state = .needsAppActivation
+                return
+            }
             state = .error("Couldn't start recording: \(error.localizedDescription)")
         }
     }
@@ -394,9 +431,21 @@ struct KeyboardView: View {
             state = .notSignedIn
         } else if !hasFullAccess {
             state = .noFullAccess
+        } else if needsAppWarmup {
+            state = .needsAppActivation
         } else {
             state = .idle
         }
+    }
+
+    private var needsAppWarmup: Bool {
+        guard let lastActive = SharedDefaults.date(for: .appBecameActiveAt) else { return true }
+        return Date().timeIntervalSince(lastActive) > appWarmThreshold
+    }
+
+    private func isKeyboardMicActivationError(_ error: Error) -> Bool {
+        let nsError = error as NSError
+        return nsError.domain == "com.apple.coreaudio.avfaudio" && nsError.code == 2003329396
     }
 
     private func openMainApp() {
