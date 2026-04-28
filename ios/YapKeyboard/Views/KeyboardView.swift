@@ -440,6 +440,10 @@ struct KeyboardView: View {
         }
     }
 
+    // Merge-safety shim: some branches still reference `needsAppWarmup`.
+    // Keep behavior as "try recording first; only warm up after failure".
+    private var needsAppWarmup: Bool { false }
+
     private func isKeyboardMicActivationError(_ error: Error) -> Bool {
         let nsError = error as NSError
         return nsError.domain == "com.apple.coreaudio.avfaudio" && nsError.code == 2003329396
