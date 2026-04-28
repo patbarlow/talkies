@@ -233,7 +233,7 @@ struct KeyboardView: View {
         Button(action: action) {
             label
                 .foregroundStyle(Color(uiColor: .label))
-                .frame(maxWidth: isWide ? .infinity : nil, minWidth: isWide ? nil : 46, minHeight: 40)
+                .frame(minWidth: isWide ? nil : 46, maxWidth: isWide ? .infinity : nil, minHeight: 40)
                 .background(
                     RoundedRectangle(cornerRadius: 8)
                         .fill(isWide ? Color(uiColor: .systemBackground) : Color(uiColor: .systemFill))
