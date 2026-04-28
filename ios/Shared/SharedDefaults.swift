@@ -22,6 +22,8 @@ enum SharedDefaults {
         case weekSeconds        = "stats.weekSeconds"
         case weekStart          = "stats.weekStart"
         case typingWPM          = "stats.typingWPM"
+        // Keyboard activation workaround
+        case appBecameActiveAt  = "app.becameActiveAt"
     }
 
     static func string(for key: Key) -> String? {
