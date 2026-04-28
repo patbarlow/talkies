@@ -50,7 +50,12 @@ final class Recorder: ObservableObject {
         engine?.inputNode.removeTap(onBus: 0)
         engine?.stop()
         engine = nil
-        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        // Do NOT call setActive(false) here. Deactivating between recordings
+        // causes the next engine.start() to fail with 'what' (0x77686174):
+        // the session reactivates but the input node reports a stale format
+        // before the hardware has re-initialized. Keeping the session active
+        // between recordings avoids this; the system cleans it up when the
+        // keyboard extension is dismissed.
         Task { @MainActor in AudioLevels.shared.reset() }
         let url = outputURL
         file = nil
