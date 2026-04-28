@@ -4,6 +4,7 @@ import AVFoundation
 enum KeyboardState: Equatable {
     case notSignedIn
     case noFullAccess
+    case needsAppActivation
     case idle
     case recording
     case processing
@@ -12,7 +13,6 @@ enum KeyboardState: Equatable {
 }
 
 struct KeyboardView: View {
-    let advanceToNextKeyboard: () -> Void
     let insertText: (String) -> Void
     let deleteBackward: () -> Void
     let hasFullAccess: Bool
@@ -26,6 +26,7 @@ struct KeyboardView: View {
     @State private var pulsing = false
 
     private let minimumRecordingDuration: TimeInterval = 0.5
+    private let appWarmThreshold: TimeInterval = 180
 
     var body: some View {
         VStack(spacing: 0) {
@@ -38,8 +39,25 @@ struct KeyboardView: View {
 
             bottomStrip
         }
-        .background(Color(uiColor: .secondarySystemBackground))
+        .background(keyboardGlassBackground)
         .onAppear(perform: checkInitialState)
+    }
+
+    private var keyboardGlassBackground: some View {
+        ZStack {
+            Rectangle()
+                .fill(.ultraThinMaterial)
+            LinearGradient(
+                colors: [
+                    Color.white.opacity(0.18),
+                    Color.white.opacity(0.08),
+                    Color.black.opacity(0.08),
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .blendMode(.plusLighter)
+        }
     }
 
     // MARK: - Info area
@@ -73,6 +91,24 @@ struct KeyboardView: View {
                     .foregroundStyle(.tertiary)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 20)
+            }
+
+        case .needsAppActivation:
+            VStack(spacing: 8) {
+                Image(systemName: "arrow.right.circle.fill")
+                    .font(.title3)
+                    .foregroundStyle(.mint)
+                Text("Activate microphone once")
+                    .font(.subheadline.weight(.medium))
+                Text("Apple may require opening Yap first. Tap below, then swipe back here and try recording again.")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 20)
+                Button("Open Yap") { openMainApp(warmup: true) }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.mint)
+                    .controlSize(.small)
             }
 
         case .idle:
@@ -167,7 +203,7 @@ struct KeyboardView: View {
         .gesture(
             DragGesture(minimumDistance: 0)
                 .onChanged { _ in
-                    guard case .idle = state else { return }
+                    guard canAttemptRecording else { return }
                     startRecording()
                 }
                 .onEnded { _ in
@@ -202,6 +238,15 @@ struct KeyboardView: View {
         }
     }
 
+    private var canAttemptRecording: Bool {
+        switch state {
+        case .idle, .needsAppActivation:
+            return true
+        default:
+            return false
+        }
+    }
+
     // MARK: - Key row (space · backspace · return)
 
     private var keyRow: some View {
@@ -226,7 +271,7 @@ struct KeyboardView: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
-        .background(Color(uiColor: .secondarySystemBackground))
+        .background(.clear)
     }
 
     private func keyButton(label: AnyView, isWide: Bool = false, action: @escaping () -> Void) -> some View {
@@ -236,26 +281,21 @@ struct KeyboardView: View {
                 .frame(minWidth: isWide ? nil : 46, maxWidth: isWide ? .infinity : nil, minHeight: 40)
                 .background(
                     RoundedRectangle(cornerRadius: 8)
-                        .fill(isWide ? Color(uiColor: .systemBackground) : Color(uiColor: .systemFill))
-                        .shadow(color: .black.opacity(0.2), radius: 0, x: 0, y: 1)
+                        .fill(isWide ? AnyShapeStyle(.thinMaterial) : AnyShapeStyle(.regularMaterial))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 8)
+                                .strokeBorder(Color.white.opacity(0.25), lineWidth: 0.7)
+                        )
+                        .shadow(color: .black.opacity(0.18), radius: 2, x: 0, y: 1)
                 )
         }
         .buttonStyle(.plain)
     }
 
-    // MARK: - Bottom strip (globe · lang info · gear)
+    // MARK: - Bottom strip (lang info · gear)
 
     private var bottomStrip: some View {
         HStack(spacing: 0) {
-            Button(action: advanceToNextKeyboard) {
-                Image(systemName: "globe")
-                    .font(.system(size: 17))
-                    .foregroundStyle(.secondary)
-                    .frame(width: 44, height: 36)
-            }
-
-            Spacer()
-
             if case .idle = state {
                 HStack(spacing: 4) {
                     Text(settings.transcriptionLanguage.whisperCode.uppercased())
@@ -272,7 +312,7 @@ struct KeyboardView: View {
 
             Spacer()
 
-            Button(action: openMainApp) {
+            Button(action: { openMainApp() }) {
                 Image(systemName: "gearshape")
                     .font(.system(size: 17))
                     .foregroundStyle(.secondary)
@@ -281,7 +321,7 @@ struct KeyboardView: View {
         }
         .padding(.horizontal, 4)
         .frame(height: 36)
-        .background(Color(uiColor: .secondarySystemBackground))
+        .background(.clear)
     }
 
     // MARK: - Recording lifecycle
@@ -289,11 +329,21 @@ struct KeyboardView: View {
     private func startRecording() {
         guard settings.sessionToken != nil else { state = .notSignedIn; return }
         guard hasFullAccess else { state = .noFullAccess; return }
+        if needsAppWarmup {
+            state = .needsAppActivation
+            openMainApp(warmup: true)
+            return
+        }
         do {
             try recorder.start()
             recordingStart = Date()
             state = .recording
         } catch {
+            if isKeyboardMicActivationError(error) {
+                state = .needsAppActivation
+                openMainApp(warmup: true)
+                return
+            }
             state = .error("Couldn't start recording: \(error.localizedDescription)")
         }
     }
@@ -383,13 +433,26 @@ struct KeyboardView: View {
             state = .notSignedIn
         } else if !hasFullAccess {
             state = .noFullAccess
+        } else if needsAppWarmup {
+            state = .needsAppActivation
         } else {
             state = .idle
         }
     }
 
-    private func openMainApp() {
-        guard let url = URL(string: "yapapp://") else { return }
+    private var needsAppWarmup: Bool {
+        guard let lastActive = SharedDefaults.date(for: .appBecameActiveAt) else { return true }
+        return Date().timeIntervalSince(lastActive) > appWarmThreshold
+    }
+
+    private func isKeyboardMicActivationError(_ error: Error) -> Bool {
+        let nsError = error as NSError
+        return nsError.domain == "com.apple.coreaudio.avfaudio" && nsError.code == 2003329396
+    }
+
+    private func openMainApp(warmup: Bool = false) {
+        let urlString = warmup ? "yapapp://keyboard-warmup" : "yapapp://"
+        guard let url = URL(string: urlString) else { return }
         let sel = NSSelectorFromString("openURL:options:completionHandler:")
         let app = UIApplication.value(forKeyPath: "sharedApplication") as AnyObject
         if app.responds(to: sel) {
