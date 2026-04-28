@@ -2,30 +2,33 @@ import AVFoundation
 
 @MainActor
 final class Recorder: ObservableObject {
-    // Engine and session are created once and kept alive for the lifetime of
-    // the Recorder. Recreating the engine or toggling setActive(false/true)
-    // between recordings causes AVAudioEngine.start() to throw error 'what'
-    // (com.apple.coreaudio.avfaudio 2003329396) on iOS keyboard extensions —
-    // the session reactivates but the input node reports a stale format before
-    // the hardware has re-initialized.
     private var engine: AVAudioEngine?
     private var file: AVAudioFile?
     private var outputURL: URL?
 
     func start() throws {
-        // Drop any tap from a previous recording before installing a new one.
+        // Build a fresh engine for each recording.
+        // Keyboard extension hosts can rapidly change audio routes; reusing a
+        // prior input node can leave it in a bad state and trigger AVAudioEngine
+        // start failures (com.apple.coreaudio.avfaudio 2003329396).
         engine?.inputNode.removeTap(onBus: 0)
+        engine?.stop()
+        engine = nil
 
-        if engine == nil {
-            let session = AVAudioSession.sharedInstance()
-            try session.setCategory(.record, mode: .measurement, options: [.duckOthers, .allowBluetooth])
-            try session.setActive(true, options: .notifyOthersOnDeactivation)
-            engine = AVAudioEngine()
-        }
+        let session = AVAudioSession.sharedInstance()
+        try session.setCategory(.playAndRecord, mode: .default, options: [.duckOthers, .allowBluetooth])
+        try session.setActive(true)
 
-        let eng = engine!
+        let eng = AVAudioEngine()
+        engine = eng
         let input = eng.inputNode
-        let sourceFormat = input.outputFormat(forBus: 0)
+        var sourceFormat = input.inputFormat(forBus: 0)
+        if sourceFormat.sampleRate <= 0 || sourceFormat.channelCount == 0 {
+            sourceFormat = input.outputFormat(forBus: 0)
+        }
+        guard sourceFormat.sampleRate > 0, sourceFormat.channelCount > 0 else {
+            throw RecorderError.invalidInputFormat
+        }
 
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("yap-\(UUID().uuidString).wav")
@@ -53,6 +56,7 @@ final class Recorder: ObservableObject {
     func stop() -> URL? {
         engine?.inputNode.removeTap(onBus: 0)
         engine?.stop()
+        engine = nil
         Task { @MainActor in AudioLevels.shared.reset() }
         let url = outputURL
         file = nil
@@ -73,5 +77,16 @@ final class Recorder: ObservableObject {
             i += 1
         }
         return (sum / Float(frames)).squareRoot()
+    }
+}
+
+enum RecorderError: LocalizedError {
+    case invalidInputFormat
+
+    var errorDescription: String? {
+        switch self {
+        case .invalidInputFormat:
+            return "Microphone isn't ready yet. Please try again."
+        }
     }
 }

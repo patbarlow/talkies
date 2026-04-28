@@ -65,7 +65,6 @@ final class KeyboardViewController: UIInputViewController {
 
     private func makeKeyboardView() -> KeyboardView {
         KeyboardView(
-            advanceToNextKeyboard: { [weak self] in self?.advanceToNextInputMode() },
             insertText: { [weak self] text in self?.textDocumentProxy.insertText(text) },
             deleteBackward: { [weak self] in self?.textDocumentProxy.deleteBackward() },
             hasFullAccess: hasFullAccess
