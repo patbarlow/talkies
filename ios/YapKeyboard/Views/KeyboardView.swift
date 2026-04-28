@@ -12,7 +12,6 @@ enum KeyboardState: Equatable {
 }
 
 struct KeyboardView: View {
-    let advanceToNextKeyboard: () -> Void
     let insertText: (String) -> Void
     let deleteBackward: () -> Void
     let hasFullAccess: Bool
@@ -38,8 +37,25 @@ struct KeyboardView: View {
 
             bottomStrip
         }
-        .background(Color(uiColor: .secondarySystemBackground))
+        .background(keyboardGlassBackground)
         .onAppear(perform: checkInitialState)
+    }
+
+    private var keyboardGlassBackground: some View {
+        ZStack {
+            Rectangle()
+                .fill(.ultraThinMaterial)
+            LinearGradient(
+                colors: [
+                    Color.white.opacity(0.18),
+                    Color.white.opacity(0.08),
+                    Color.black.opacity(0.08),
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .blendMode(.plusLighter)
+        }
     }
 
     // MARK: - Info area
@@ -226,7 +242,7 @@ struct KeyboardView: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
-        .background(Color(uiColor: .secondarySystemBackground))
+        .background(.clear)
     }
 
     private func keyButton(label: AnyView, isWide: Bool = false, action: @escaping () -> Void) -> some View {
@@ -236,26 +252,21 @@ struct KeyboardView: View {
                 .frame(minWidth: isWide ? nil : 46, maxWidth: isWide ? .infinity : nil, minHeight: 40)
                 .background(
                     RoundedRectangle(cornerRadius: 8)
-                        .fill(isWide ? Color(uiColor: .systemBackground) : Color(uiColor: .systemFill))
-                        .shadow(color: .black.opacity(0.2), radius: 0, x: 0, y: 1)
+                        .fill(isWide ? AnyShapeStyle(.thinMaterial) : AnyShapeStyle(.regularMaterial))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 8)
+                                .strokeBorder(Color.white.opacity(0.25), lineWidth: 0.7)
+                        )
+                        .shadow(color: .black.opacity(0.18), radius: 2, x: 0, y: 1)
                 )
         }
         .buttonStyle(.plain)
     }
 
-    // MARK: - Bottom strip (globe · lang info · gear)
+    // MARK: - Bottom strip (lang info · gear)
 
     private var bottomStrip: some View {
         HStack(spacing: 0) {
-            Button(action: advanceToNextKeyboard) {
-                Image(systemName: "globe")
-                    .font(.system(size: 17))
-                    .foregroundStyle(.secondary)
-                    .frame(width: 44, height: 36)
-            }
-
-            Spacer()
-
             if case .idle = state {
                 HStack(spacing: 4) {
                     Text(settings.transcriptionLanguage.whisperCode.uppercased())
@@ -281,7 +292,7 @@ struct KeyboardView: View {
         }
         .padding(.horizontal, 4)
         .frame(height: 36)
-        .background(Color(uiColor: .secondarySystemBackground))
+        .background(.clear)
     }
 
     // MARK: - Recording lifecycle
