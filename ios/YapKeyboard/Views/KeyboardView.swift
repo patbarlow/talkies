@@ -440,11 +440,6 @@ struct KeyboardView: View {
         }
     }
 
-    private var needsAppWarmup: Bool {
-        guard let lastActive = SharedDefaults.date(for: .appBecameActiveAt) else { return true }
-        return Date().timeIntervalSince(lastActive) > appWarmThreshold
-    }
-
     private func isKeyboardMicActivationError(_ error: Error) -> Bool {
         let nsError = error as NSError
         return nsError.domain == "com.apple.coreaudio.avfaudio" && nsError.code == 2003329396
