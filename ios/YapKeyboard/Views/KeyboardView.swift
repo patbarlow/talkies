@@ -105,7 +105,7 @@ struct KeyboardView: View {
                     .foregroundStyle(.tertiary)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 20)
-                Button("Open Yap") { openMainApp() }
+                Button("Open Yap") { openMainApp(warmup: true) }
                     .buttonStyle(.borderedProminent)
                     .tint(.mint)
                     .controlSize(.small)
@@ -331,6 +331,7 @@ struct KeyboardView: View {
         guard hasFullAccess else { state = .noFullAccess; return }
         if needsAppWarmup {
             state = .needsAppActivation
+            openMainApp(warmup: true)
             return
         }
         do {
@@ -340,6 +341,7 @@ struct KeyboardView: View {
         } catch {
             if isKeyboardMicActivationError(error) {
                 state = .needsAppActivation
+                openMainApp(warmup: true)
                 return
             }
             state = .error("Couldn't start recording: \(error.localizedDescription)")
@@ -448,8 +450,9 @@ struct KeyboardView: View {
         return nsError.domain == "com.apple.coreaudio.avfaudio" && nsError.code == 2003329396
     }
 
-    private func openMainApp() {
-        guard let url = URL(string: "yapapp://") else { return }
+    private func openMainApp(warmup: Bool = false) {
+        let urlString = warmup ? "yapapp://keyboard-warmup" : "yapapp://"
+        guard let url = URL(string: urlString) else { return }
         let sel = NSSelectorFromString("openURL:options:completionHandler:")
         let app = UIApplication.value(forKeyPath: "sharedApplication") as AnyObject
         if app.responds(to: sel) {
