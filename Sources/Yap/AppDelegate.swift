@@ -355,13 +355,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         FloatingOverlay.shared.show(.processing)
         do {
             let raw = try await Transcriber.shared.transcribe(wavURL: url)
-            guard !raw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            let trimmedRaw = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            // Whisper returns "[BLANK_AUDIO]" (or lowercase variant) for silent recordings.
+            guard !trimmedRaw.isEmpty && trimmedRaw.lowercased() != "[blank_audio]" else {
                 FloatingOverlay.shared.show(.hidden)
                 return
             }
             let final: String = Settings.shared.cleanupLevel != .off
                 ? ((try? await Cleaner.shared.clean(raw)) ?? raw)
                 : raw
+            guard !final.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                FloatingOverlay.shared.show(.hidden)
+                return
+            }
             // Capture the target app BEFORE we paste — the synthesized ⌘V may briefly steal focus.
             let target = NSWorkspace.shared.frontmostApplication
             let cleanupLevel = Settings.shared.cleanupLevel
