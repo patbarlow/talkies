@@ -19,6 +19,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var retryTimer: Timer?
     private var recordingStartedAt: Date?
     private var pendingSyncDone = false
+    private var pendingAutoSubmit = false
 
     // Sparkle — auto-update controller. `startingUpdater: true` runs periodic
     // background checks per SUScheduledCheckInterval in Info.plist.
@@ -382,6 +383,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let cleanupLevel = Settings.shared.cleanupLevel
             let language = Settings.shared.transcriptionLanguage
             Paster.paste(final)
+            if pendingAutoSubmit {
+                pendingAutoSubmit = false
+                // Brief delay to let the paste settle before submitting.
+                Task {
+                    try? await Task.sleep(nanoseconds: 150_000_000)
+                    let src = CGEventSource(stateID: .combinedSessionState)
+                    CGEvent(keyboardEventSource: src, virtualKey: CGKeyCode(kVK_Return), keyDown: true)?
+                        .post(tap: .cgAnnotatedSessionEventTap)
+                    CGEvent(keyboardEventSource: src, virtualKey: CGKeyCode(kVK_Return), keyDown: false)?
+                        .post(tap: .cgAnnotatedSessionEventTap)
+                }
+            }
             Stats.shared.record(text: final, duration: duration)
             if let entry = Library.shared.record(
                 raw: raw,
@@ -414,11 +427,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         switch url.host {
         case "record":
             guard AuthStore.shared.isSignedIn else { return }
-            let summary = URLComponents(url: url, resolvingAgainstBaseURL: false)?
-                .queryItems?.first(where: { $0.name == "summary" })?.value ?? ""
+            let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+            let summary = components?.queryItems?.first(where: { $0.name == "summary" })?.value ?? ""
             let hotkeyLabel = Settings.shared.hotkey.label
+            pendingAutoSubmit = components?.queryItems?.first(where: { $0.name == "autosubmit" })?.value == "1"
             FloatingOverlay.shared.show(.review(summary: summary, hotkeyLabel: hotkeyLabel))
         case "dismiss":
+            pendingAutoSubmit = false
             FloatingOverlay.shared.show(.hidden)
         default:
             break
