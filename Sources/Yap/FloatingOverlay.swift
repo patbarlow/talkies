@@ -1,4 +1,5 @@
 import AppKit
+import Carbon.HIToolbox
 import Combine
 import SwiftUI
 
@@ -70,6 +71,10 @@ final class FloatingOverlay {
                 self?.show(.hidden)
             }
         }
+    }
+
+    func activateForTextInput() {
+        panel?.makeKeyAndOrderFront(nil)
     }
 
     private func panelSize(for mode: OverlayViewModel.Mode) -> NSSize {
@@ -203,6 +208,12 @@ private struct ReviewCard: View {
     let summary: String
     let hotkeyLabel: String
 
+    @State private var hoveringBottom = false
+    @State private var replyText = ""
+    @FocusState private var isTextFocused: Bool
+
+    private var showingTextInput: Bool { hoveringBottom || isTextFocused || !replyText.isEmpty }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .top, spacing: 8) {
@@ -225,13 +236,47 @@ private struct ReviewCard: View {
 
             Spacer(minLength: 10)
 
-            HStack(spacing: 5) {
-                Image(systemName: "mic.fill")
-                    .font(.system(size: 10, weight: .medium))
-                Text("Hold \(hotkeyLabel) to reply")
-                    .font(.system(size: 11))
+            // Hover over this area to reveal a text input; default shows the voice hint.
+            ZStack(alignment: .leading) {
+                if showingTextInput {
+                    HStack(spacing: 6) {
+                        TextField("Type your reply…", text: $replyText)
+                            .textFieldStyle(.plain)
+                            .font(.system(size: 12))
+                            .foregroundColor(.white)
+                            .focused($isTextFocused)
+                            .onSubmit { sendTextReply() }
+                        Button(action: sendTextReply) {
+                            Image(systemName: "arrow.up.circle.fill")
+                                .font(.system(size: 20))
+                                .foregroundColor(replyText.isEmpty ? .white.opacity(0.25) : .white)
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(replyText.isEmpty)
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 7)
+                    .frame(maxWidth: .infinity)
+                    .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(.white.opacity(0.1)))
+                    .transition(.opacity.combined(with: .scale(scale: 0.97, anchor: .bottom)))
+                } else {
+                    HStack(spacing: 5) {
+                        Image(systemName: "mic.fill")
+                            .font(.system(size: 10, weight: .medium))
+                        Text("Hold \(hotkeyLabel) to reply")
+                            .font(.system(size: 11))
+                    }
+                    .foregroundColor(.white.opacity(0.45))
+                    .transition(.opacity)
+                }
             }
-            .foregroundColor(.white.opacity(0.45))
+            .animation(.easeInOut(duration: 0.12), value: showingTextInput)
+            .onHover { hovering in
+                hoveringBottom = hovering
+                if hovering && !isTextFocused {
+                    FloatingOverlay.shared.activateForTextInput()
+                }
+            }
         }
         .padding(.horizontal, 18)
         .padding(.vertical, 16)
@@ -240,5 +285,24 @@ private struct ReviewCard: View {
             RoundedRectangle(cornerRadius: 20, style: .continuous)
                 .fill(Color.black.opacity(0.92))
         )
+    }
+
+    private func sendTextReply() {
+        guard !replyText.isEmpty else { return }
+        let text = replyText
+        replyText = ""
+        isTextFocused = false
+        FloatingOverlay.shared.show(.hidden)
+        Task { @MainActor in
+            // Let the panel dismiss so the terminal regains key focus.
+            try? await Task.sleep(nanoseconds: 200_000_000)
+            Paster.paste(text)
+            try? await Task.sleep(nanoseconds: 150_000_000)
+            let src = CGEventSource(stateID: .combinedSessionState)
+            CGEvent(keyboardEventSource: src, virtualKey: CGKeyCode(kVK_Return), keyDown: true)?
+                .post(tap: .cgAnnotatedSessionEventTap)
+            CGEvent(keyboardEventSource: src, virtualKey: CGKeyCode(kVK_Return), keyDown: false)?
+                .post(tap: .cgAnnotatedSessionEventTap)
+        }
     }
 }
