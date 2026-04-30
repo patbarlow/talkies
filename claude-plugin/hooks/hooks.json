@@ -1,0 +1,46 @@
+{
+  "description": "Talkies voice integration — show a review card and trigger recording when Claude Code needs input",
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.config/yap/claude-hooks/record.sh"
+          }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.config/yap/claude-hooks/record.sh"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "AskUserQuestion",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.config/yap/claude-hooks/record.sh"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.config/yap/claude-hooks/dismiss.sh"
+          }
+        ]
+      }
+    ]
+  }
+}

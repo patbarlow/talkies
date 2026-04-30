@@ -1,0 +1,9 @@
+{
+  "name": "talkies",
+  "version": "1.0.0",
+  "description": "Talkies voice integration — start recording instantly when Claude Code finishes a task. Speak your next command; Talkies transcribes and pastes it.",
+  "author": {
+    "name": "Talkies",
+    "url": "https://patbarlow.github.io/talkies"
+  }
+}
