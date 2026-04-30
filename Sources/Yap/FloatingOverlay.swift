@@ -47,13 +47,13 @@ final class FloatingOverlay {
             return
         }
 
-        // Review card is interactive (close button, draggable); pills pass through clicks.
+        // Review card is interactive (close button, text input); pills pass through clicks.
+        // isMovableByWindowBackground must stay false — true causes the window to consume
+        // mouseDown events before SwiftUI tap gestures can fire on the text input area.
         if case .review = mode {
             panel.ignoresMouseEvents = false
-            panel.isMovableByWindowBackground = true
         } else {
             panel.ignoresMouseEvents = true
-            panel.isMovableByWindowBackground = false
         }
 
         let size = panelSize(for: mode)
@@ -269,24 +269,18 @@ private struct ReviewCard: View {
                     .transition(.opacity)
                 }
 
-                // Transparent tap target — activates the panel as key window on click so the
-                // TextField can receive keyboard input. NOT called on hover, which would steal
-                // keyboard focus from the terminal every time the user moved the mouse over the card.
-                if !isTextFocused {
-                    Color.clear
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            FloatingOverlay.shared.activateForTextInput()
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-                                isTextFocused = true
-                            }
-                        }
-                }
             }
             .animation(.easeInOut(duration: 0.12), value: showingTextInput)
             .onHover { hovering in
                 hoveringBottom = hovering
             }
+            .simultaneousGesture(TapGesture().onEnded {
+                guard !isTextFocused else { return }
+                FloatingOverlay.shared.activateForTextInput()
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    isTextFocused = true
+                }
+            })
         }
         .padding(.horizontal, 18)
         .padding(.vertical, 16)
