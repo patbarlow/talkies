@@ -42,6 +42,15 @@ final class FloatingOverlay {
             return
         }
 
+        // Review card is interactive (close button, draggable); pills pass through clicks.
+        if case .review = mode {
+            panel.ignoresMouseEvents = false
+            panel.isMovableByWindowBackground = true
+        } else {
+            panel.ignoresMouseEvents = true
+            panel.isMovableByWindowBackground = false
+        }
+
         let size = panelSize(for: mode)
         reposition(to: size)
         if !panel.isVisible {
@@ -196,11 +205,23 @@ private struct ReviewCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text(summary)
-                .font(.system(size: 12))
-                .foregroundColor(.white)
-                .lineLimit(5)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            HStack(alignment: .top, spacing: 8) {
+                Text(summary.isEmpty ? "Claude finished" : summary)
+                    .font(.system(size: 12))
+                    .foregroundColor(.white)
+                    .lineLimit(5)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                Button {
+                    FloatingOverlay.shared.show(.hidden)
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundColor(.white.opacity(0.4))
+                        .frame(width: 20, height: 20)
+                }
+                .buttonStyle(.plain)
+            }
 
             Spacer(minLength: 10)
 
