@@ -38,6 +38,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         buildMenuBar()
         refreshStatus()
 
+        // Register handler for yap:// deep links (e.g. yap://record from the Claude Code hook).
+        // kInternetEventClass / kAEGetURL are both the four-char code 'GURL' = 0x4755524C.
+        NSAppleEventManager.shared().setEventHandler(
+            self,
+            andSelector: #selector(handleGetURL(_:withReplyEvent:)),
+            forEventClass: 0x4755524C,
+            andEventID: 0x4755524C
+        )
+
         // Hotkey spec rebinding
         NotificationCenter.default.addObserver(
             forName: .yapHotkeyChanged,
@@ -389,6 +398,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             NSLog("Yap pipeline error: \(error)")
         }
         FloatingOverlay.shared.show(.hidden)
+    }
+
+    // MARK: - URL scheme (yap://)
+
+    // Called by macOS when another process opens a yap:// URL.
+    // yap://record  — start recording so the user can dictate their next message.
+    @objc private func handleGetURL(_ event: NSAppleEventDescriptor, withReplyEvent: NSAppleEventDescriptor) {
+        // keyDirectObject = '----' = 0x2D2D2D2D
+        guard let urlString = event.paramDescriptor(forKeyword: 0x2D2D2D2D)?.stringValue,
+              let url = URL(string: urlString),
+              url.scheme == "yap" else { return }
+        if url.host == "record", AuthStore.shared.isSignedIn {
+            startRecording()
+        }
     }
 
     // MARK: - Settings window

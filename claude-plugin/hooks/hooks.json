@@ -1,0 +1,36 @@
+{
+  "description": "Talkies voice integration — trigger recording when Claude Code needs input",
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "open yap://record"
+          }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "open yap://record"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "AskUserQuestion",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "open yap://record"
+          }
+        ]
+      }
+    ]
+  }
+}
