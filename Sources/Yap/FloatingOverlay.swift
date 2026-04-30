@@ -77,10 +77,6 @@ final class FloatingOverlay {
         }
     }
 
-    func activateForTextInput() {
-        panel?.makeKeyAndOrderFront(nil)
-    }
-
     private func panelSize(for mode: OverlayViewModel.Mode) -> NSSize {
         switch mode {
         case .hidden, .recording, .processing:
