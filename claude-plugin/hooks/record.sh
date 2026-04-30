@@ -20,21 +20,23 @@ fi
 
 # For Stop and Notification, read the last assistant message from the transcript JSONL.
 if [ -z "$SUMMARY" ] && [ -f "$TRANSCRIPT" ]; then
-  # Handle two JSONL formats Claude Code may use:
+  # Use slurp mode (-rs) so we get the entire 200-line window as an array, then find
+  # the last assistant message that contains actual text (not just tool calls).
+  # Handles both JSONL formats Claude Code uses:
   #   {"role":"assistant","content":[{"type":"text","text":"..."}]}
-  #   {"type":"assistant","message":{"content":[{"type":"text","text":"..."}]}}
-  SUMMARY=$(tail -n 200 "$TRANSCRIPT" | jq -r '
-    if .role == "assistant" then
-      if (.content | type) == "array" then
-        [.content[] | select(.type == "text") | .text] | join("")
-      elif (.content | type) == "string" then .content
+  #   {"type":"assistant","content":[{"type":"text","text":"..."}]}
+  SUMMARY=$(tail -n 200 "$TRANSCRIPT" | jq -rs '
+    [.[] |
+      if (.role == "assistant" or .type == "assistant") then
+        if (.content | type) == "array" then
+          [.content[] | select(.type == "text") | .text] | join(" ")
+        elif (.content | type) == "string" then .content
+        else ""
+        end
       else ""
       end
-    elif .type == "assistant" then
-      [(.message.content // [])[] | select(.type == "text") | .text] | join("")
-    else ""
-    end
-  ' 2>/dev/null | sed '/^[[:space:]]*$/d' | tail -1 || true)
+    ] | map(select(length > 0)) | last // ""
+  ' 2>/dev/null || true)
 fi
 
 # Trim whitespace, collapse newlines, cap at 400 chars

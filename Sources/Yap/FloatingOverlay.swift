@@ -25,6 +25,10 @@ final class FloatingOverlay {
 
     private init() {}
 
+    func activateForTextInput() {
+        panel?.makeKeyAndOrderFront(nil)
+    }
+
     func show(_ mode: OverlayViewModel.Mode) {
         reviewDismissTask?.cancel()
         reviewDismissTask = nil
@@ -236,7 +240,6 @@ private struct ReviewCard: View {
 
             Spacer(minLength: 10)
 
-            // Hover over this area to reveal a text input; default shows the voice hint.
             ZStack(alignment: .leading) {
                 if showingTextInput {
                     HStack(spacing: 6) {
@@ -269,13 +272,24 @@ private struct ReviewCard: View {
                     .foregroundColor(.white.opacity(0.45))
                     .transition(.opacity)
                 }
+
+                // Transparent tap target — activates the panel as key window on click so the
+                // TextField can receive keyboard input. NOT called on hover, which would steal
+                // keyboard focus from the terminal every time the user moved the mouse over the card.
+                if !isTextFocused {
+                    Color.clear
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            FloatingOverlay.shared.activateForTextInput()
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                                isTextFocused = true
+                            }
+                        }
+                }
             }
             .animation(.easeInOut(duration: 0.12), value: showingTextInput)
             .onHover { hovering in
                 hoveringBottom = hovering
-                if hovering && !isTextFocused {
-                    FloatingOverlay.shared.activateForTextInput()
-                }
             }
         }
         .padding(.horizontal, 18)
@@ -294,7 +308,6 @@ private struct ReviewCard: View {
         isTextFocused = false
         FloatingOverlay.shared.show(.hidden)
         Task { @MainActor in
-            // Let the panel dismiss so the terminal regains key focus.
             try? await Task.sleep(nanoseconds: 200_000_000)
             Paster.paste(text)
             try? await Task.sleep(nanoseconds: 150_000_000)
