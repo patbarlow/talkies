@@ -4,23 +4,30 @@ import SwiftUI
 
 @MainActor
 final class OverlayViewModel: ObservableObject {
-    enum Mode: Equatable { case hidden, recording, processing }
+    enum Mode: Equatable {
+        case hidden, recording, processing
+        case review(summary: String, hotkeyLabel: String)
+    }
     @Published var mode: Mode = .hidden
 }
 
 /// A borderless floating panel that sits just below the menu bar and shows
-/// recording / processing state. Uses macOS native window shadow, which auto-
-/// masks to visible (non-transparent) pixels of the pill.
+/// recording / processing / review state. Uses macOS native window shadow, which
+/// auto-masks to visible (non-transparent) pixels of the pill/card.
 @MainActor
 final class FloatingOverlay {
     static let shared = FloatingOverlay()
 
     private let viewModel = OverlayViewModel()
     private var panel: NSPanel?
+    private var reviewDismissTask: Task<Void, Never>?
 
     private init() {}
 
     func show(_ mode: OverlayViewModel.Mode) {
+        reviewDismissTask?.cancel()
+        reviewDismissTask = nil
+
         ensurePanel()
         viewModel.mode = mode
         guard let panel else { return }
@@ -35,7 +42,8 @@ final class FloatingOverlay {
             return
         }
 
-        reposition()
+        let size = panelSize(for: mode)
+        reposition(to: size)
         if !panel.isVisible {
             panel.alphaValue = 0
             panel.orderFrontRegardless()
@@ -44,8 +52,24 @@ final class FloatingOverlay {
             ctx.duration = 0.2
             panel.animator().alphaValue = 1
         }
-        // Re-trace the shadow outline after the pill shape changes.
         panel.invalidateShadow()
+
+        if case .review = mode {
+            reviewDismissTask = Task { [weak self] in
+                try? await Task.sleep(nanoseconds: 60_000_000_000)
+                guard !Task.isCancelled else { return }
+                self?.show(.hidden)
+            }
+        }
+    }
+
+    private func panelSize(for mode: OverlayViewModel.Mode) -> NSSize {
+        switch mode {
+        case .hidden, .recording, .processing:
+            return NSSize(width: 220, height: 56)
+        case .review:
+            return NSSize(width: 380, height: 158)
+        }
     }
 
     private func ensurePanel() {
@@ -62,7 +86,6 @@ final class FloatingOverlay {
         panel.contentViewController = hosting
         panel.backgroundColor = .clear
         panel.isOpaque = false
-        // macOS native window shadow — auto-masks to the alpha>0 pixels of the pill.
         panel.hasShadow = true
         panel.level = NSWindow.Level(rawValue: Int(CGShieldingWindowLevel()) - 1)
         panel.isFloatingPanel = true
@@ -71,9 +94,6 @@ final class FloatingOverlay {
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
         panel.ignoresMouseEvents = true
 
-        // Force the panel's contentView and the hosting view to have clear layers.
-        // Without this, NSHostingView paints an opaque backing, leaving visible
-        // square corners around the rounded pill.
         if let cv = panel.contentView {
             cv.wantsLayer = true
             cv.layer?.backgroundColor = NSColor.clear.cgColor
@@ -86,17 +106,16 @@ final class FloatingOverlay {
         self.panel = panel
     }
 
-    private func reposition() {
+    private func reposition(to size: NSSize) {
         guard let panel, let screen = NSScreen.main else { return }
-        let size = panel.frame.size
         let visible = screen.visibleFrame
         let x = visible.midX - size.width / 2
         let y = visible.maxY - size.height - 6
-        panel.setFrame(NSRect(x: x, y: y, width: size.width, height: size.height), display: true)
+        panel.setFrame(NSRect(origin: NSPoint(x: x, y: y), size: size), display: true)
     }
 }
 
-// MARK: - Pill views
+// MARK: - Pill/card views
 
 private struct OverlayRoot: View {
     @EnvironmentObject var vm: OverlayViewModel
@@ -113,6 +132,9 @@ private struct OverlayRoot: View {
             case .processing:
                 ProcessingPill()
                     .transition(.scale(scale: 0.85).combined(with: .opacity))
+            case .review(let summary, let hotkeyLabel):
+                ReviewCard(summary: summary, hotkeyLabel: hotkeyLabel)
+                    .transition(.scale(scale: 0.92).combined(with: .opacity))
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -165,5 +187,37 @@ private struct ProcessingPill: View {
                 phase = (phase + 1) % 3
             }
         }
+    }
+}
+
+private struct ReviewCard: View {
+    let summary: String
+    let hotkeyLabel: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text(summary)
+                .font(.system(size: 12))
+                .foregroundColor(.white)
+                .lineLimit(5)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            Spacer(minLength: 10)
+
+            HStack(spacing: 5) {
+                Image(systemName: "mic.fill")
+                    .font(.system(size: 10, weight: .medium))
+                Text("Hold \(hotkeyLabel) to reply")
+                    .font(.system(size: 11))
+            }
+            .foregroundColor(.white.opacity(0.45))
+        }
+        .padding(.horizontal, 18)
+        .padding(.vertical, 16)
+        .frame(width: 380, height: 158)
+        .background(
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .fill(Color.black.opacity(0.92))
+        )
     }
 }

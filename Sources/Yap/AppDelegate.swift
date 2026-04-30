@@ -403,14 +403,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - URL scheme (yap://)
 
     // Called by macOS when another process opens a yap:// URL.
-    // yap://record  — start recording so the user can dictate their next message.
+    // yap://record?summary=<text>  — show the review card so the user can read what
+    //                                Claude did, then hold the hotkey to reply by voice.
+    // yap://dismiss                — hide the review card (fired on UserPromptSubmit).
     @objc private func handleGetURL(_ event: NSAppleEventDescriptor, withReplyEvent: NSAppleEventDescriptor) {
         // keyDirectObject = '----' = 0x2D2D2D2D
         guard let urlString = event.paramDescriptor(forKeyword: 0x2D2D2D2D)?.stringValue,
               let url = URL(string: urlString),
               url.scheme == "yap" else { return }
-        if url.host == "record", AuthStore.shared.isSignedIn {
-            startRecording()
+        switch url.host {
+        case "record":
+            guard AuthStore.shared.isSignedIn else { return }
+            let summary = URLComponents(url: url, resolvingAgainstBaseURL: false)?
+                .queryItems?.first(where: { $0.name == "summary" })?.value ?? ""
+            let hotkeyLabel = Settings.shared.hotkey.label
+            FloatingOverlay.shared.show(.review(summary: summary, hotkeyLabel: hotkeyLabel))
+        case "dismiss":
+            FloatingOverlay.shared.show(.hidden)
+        default:
+            break
         }
     }
 
