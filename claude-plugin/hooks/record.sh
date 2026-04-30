@@ -20,17 +20,23 @@ fi
 
 # For Stop and Notification, read the last assistant message from the transcript JSONL.
 if [ -z "$SUMMARY" ] && [ -f "$TRANSCRIPT" ]; then
-  # Use slurp mode (-rs) so we get the entire 200-line window as an array, then find
-  # the last assistant message that contains actual text (not just tool calls).
-  # Handles both JSONL formats Claude Code uses:
+  # Slurp all 200 lines into an array, then pick the last assistant entry that has text.
+  # Claude Code uses two JSONL formats:
   #   {"role":"assistant","content":[{"type":"text","text":"..."}]}
-  #   {"type":"assistant","content":[{"type":"text","text":"..."}]}
+  #   {"type":"assistant","message":{"content":[{"type":"text","text":"..."}]}}
   SUMMARY=$(tail -n 200 "$TRANSCRIPT" | jq -rs '
     [.[] |
-      if (.role == "assistant" or .type == "assistant") then
+      if .role == "assistant" then
         if (.content | type) == "array" then
           [.content[] | select(.type == "text") | .text] | join(" ")
         elif (.content | type) == "string" then .content
+        else ""
+        end
+      elif .type == "assistant" then
+        if (.content | type) == "array" then
+          [.content[] | select(.type == "text") | .text] | join(" ")
+        elif ((.message.content) | type) == "array" then
+          [.message.content[] | select(.type == "text") | .text] | join(" ")
         else ""
         end
       else ""
