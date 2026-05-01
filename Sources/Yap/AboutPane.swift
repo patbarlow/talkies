@@ -26,6 +26,14 @@ struct AboutPane: View {
                 .multilineTextAlignment(.center)
 
             Spacer()
+
+            Button("Show onboarding walkthrough") {
+                NotificationCenter.default.post(name: .yapShowOnboarding, object: false)
+            }
+            .buttonStyle(.bordered)
+            .tint(.mint)
+            .controlSize(.regular)
+            .padding(.bottom, 8)
         }
         .frame(maxWidth: .infinity)
     }

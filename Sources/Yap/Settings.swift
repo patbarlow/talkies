@@ -6,6 +6,11 @@ extension Notification.Name {
     static let yapHotkeyChanged = Notification.Name("YapHotkeyChanged")
     static let yapAuthStateChanged = Notification.Name("YapAuthStateChanged")
     static let yapAccessibilityChanged = Notification.Name("YapAccessibilityChanged")
+    static let yapOnboardingComplete = Notification.Name("YapOnboardingComplete")
+    static let yapShowOnboarding = Notification.Name("YapShowOnboarding")
+    static let yapSuspendHotkey = Notification.Name("YapSuspendHotkey")
+    static let yapResumeHotkey = Notification.Name("YapResumeHotkey")
+    static let yapOpenAccount = Notification.Name("YapOpenAccount")
 }
 
 

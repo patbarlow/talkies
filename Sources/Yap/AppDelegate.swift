@@ -20,6 +20,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var recordingStartedAt: Date?
     private var pendingSyncDone = false
     private var pendingAutoSubmit = false
+    private var onboardingWindow: NSWindow?
 
     // Sparkle — auto-update controller. `startingUpdater: true` runs periodic
     // background checks per SUScheduledCheckInterval in Info.plist.
@@ -90,10 +91,74 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
 
+        NotificationCenter.default.addObserver(
+            forName: .yapOnboardingComplete,
+            object: nil,
+            queue: .main
+        ) { [weak self] note in
+            MainActor.assumeIsolated {
+                self?.onboardingWindow?.close()
+                self?.onboardingWindow = nil
+                if note.object as? Bool == true {
+                    self?.reconcile()
+                }
+            }
+        }
+
+        NotificationCenter.default.addObserver(
+            forName: .yapShowOnboarding,
+            object: nil,
+            queue: .main
+        ) { [weak self] note in
+            MainActor.assumeIsolated {
+                self?.openOnboarding(showLoginAfter: note.object as? Bool ?? false)
+            }
+        }
+
+        NotificationCenter.default.addObserver(
+            forName: .yapSuspendHotkey,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.hotkey?.uninstall() }
+        }
+
+        NotificationCenter.default.addObserver(
+            forName: .yapResumeHotkey,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                if let hk = self?.hotkey, !hk.isInstalled { _ = hk.install() }
+            }
+        }
+
+        NotificationCenter.default.addObserver(
+            forName: .yapOpenAccount,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                SettingsRouter.shared.selection = .account
+                self?.openSettings()
+            }
+        }
+
         UserDefaults.standard.set(true, forKey: "hasLaunchedBefore")
-        // Settle a moment so the menu-bar icon draws first, then reconcile.
+        // Settle a moment so the menu-bar icon draws first, then start up.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
-            self?.reconcile()
+            guard let self else { return }
+            let hasCompleted = UserDefaults.standard.bool(forKey: "hasCompletedOnboarding")
+            if !hasCompleted && !AuthStore.shared.isSignedIn {
+                // Brand-new user: run onboarding first, then login.
+                self.openOnboarding(showLoginAfter: true)
+            } else {
+                // Existing user or already signed in: skip onboarding.
+                if !hasCompleted {
+                    UserDefaults.standard.set(true, forKey: "hasCompletedOnboarding")
+                }
+                self.reconcile()
+            }
         }
     }
 
@@ -111,7 +176,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             hotkey = nil
             retryTimer?.invalidate()
             retryTimer = nil
-            if !(settingsWindow?.isVisible ?? false) { openSettings() }
+            let onboardingVisible = onboardingWindow?.isVisible ?? false
+            if !(settingsWindow?.isVisible ?? false) && !onboardingVisible { openSettings() }
             refreshStatus()
             return
         }
@@ -125,7 +191,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if hotkey == nil { installHotkey() }
         } else {
             SettingsRouter.shared.selection = .permissions
-            if !(settingsWindow?.isVisible ?? false) { openSettings() }
+            let onboardingVisible = onboardingWindow?.isVisible ?? false
+            if !(settingsWindow?.isVisible ?? false) && !onboardingVisible { openSettings() }
         }
         refreshStatus()
     }
@@ -435,10 +502,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             ) {
                 Task { await SessionSyncer.shared.syncEntry(entry) }
             }
+            FloatingOverlay.shared.show(.hidden)
+        } catch let error as APIError {
+            if case .weeklyLimitReached = error {
+                FloatingOverlay.shared.show(.limitReached)
+                Task { await AuthStore.shared.refresh() }
+            } else {
+                FloatingOverlay.shared.show(.hidden)
+                NSLog("Yap pipeline error: \(error)")
+            }
         } catch {
+            FloatingOverlay.shared.show(.hidden)
             NSLog("Yap pipeline error: \(error)")
         }
-        FloatingOverlay.shared.show(.hidden)
     }
 
     // MARK: - URL scheme (yap://)
@@ -476,6 +552,39 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
         updaterController.checkForUpdates(sender)
+    }
+
+    // MARK: - Onboarding window
+
+    private func openOnboarding(showLoginAfter: Bool) {
+        if let existing = onboardingWindow, existing.isVisible {
+            NSApp.setActivationPolicy(.regular)
+            NSApp.activate(ignoringOtherApps: true)
+            existing.makeKeyAndOrderFront(nil)
+            return
+        }
+        onboardingWindow = nil
+
+        let hostingView = NSHostingView(rootView: OnboardingView(showLoginAfter: showLoginAfter))
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 380, height: 490),
+            styleMask: [.titled, .closable],
+            backing: .buffered,
+            defer: false
+        )
+        window.title = "Yap"
+        window.titlebarAppearsTransparent = true
+        window.titleVisibility = .hidden
+        window.isReleasedWhenClosed = false
+        window.isMovableByWindowBackground = true
+        window.backgroundColor = NSColor(calibratedRed: 0.11, green: 0.11, blue: 0.13, alpha: 1)
+        window.contentView = hostingView
+        window.center()
+        onboardingWindow = window
+
+        NSApp.setActivationPolicy(.regular)
+        NSApp.activate(ignoringOtherApps: true)
+        window.makeKeyAndOrderFront(nil)
     }
 
     // MARK: - Settings window

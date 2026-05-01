@@ -8,6 +8,7 @@ final class OverlayViewModel: ObservableObject {
     enum Mode: Equatable {
         case hidden, recording, processing
         case review(summary: String, hotkeyLabel: String)
+        case limitReached
     }
     @Published var mode: Mode = .hidden
 }
@@ -47,12 +48,13 @@ final class FloatingOverlay {
             return
         }
 
-        // Review card is interactive (close button, text input); pills pass through clicks.
+        // Review and limit cards are interactive; pills pass through clicks.
         // isMovableByWindowBackground must stay false — true causes the window to consume
         // mouseDown events before SwiftUI tap gestures can fire on the text input area.
-        if case .review = mode {
+        switch mode {
+        case .review, .limitReached:
             panel.ignoresMouseEvents = false
-        } else {
+        default:
             panel.ignoresMouseEvents = true
         }
 
@@ -68,12 +70,21 @@ final class FloatingOverlay {
         }
         panel.invalidateShadow()
 
-        if case .review = mode {
+        switch mode {
+        case .review:
             reviewDismissTask = Task { [weak self] in
                 try? await Task.sleep(nanoseconds: 60_000_000_000)
                 guard !Task.isCancelled else { return }
                 self?.show(.hidden)
             }
+        case .limitReached:
+            reviewDismissTask = Task { [weak self] in
+                try? await Task.sleep(nanoseconds: 30_000_000_000)
+                guard !Task.isCancelled else { return }
+                self?.show(.hidden)
+            }
+        default:
+            break
         }
     }
 
@@ -83,6 +94,8 @@ final class FloatingOverlay {
             return NSSize(width: 220, height: 56)
         case .review:
             return NSSize(width: 380, height: 158)
+        case .limitReached:
+            return NSSize(width: 320, height: 120)
         }
     }
 
@@ -148,6 +161,9 @@ private struct OverlayRoot: View {
                     .transition(.scale(scale: 0.85).combined(with: .opacity))
             case .review(let summary, let hotkeyLabel):
                 ReviewCard(summary: summary, hotkeyLabel: hotkeyLabel)
+                    .transition(.scale(scale: 0.92).combined(with: .opacity))
+            case .limitReached:
+                LimitReachedCard()
                     .transition(.scale(scale: 0.92).combined(with: .opacity))
             }
         }
@@ -307,5 +323,83 @@ private struct ReviewCard: View {
             CGEvent(keyboardEventSource: src, virtualKey: CGKeyCode(kVK_Return), keyDown: false)?
                 .post(tap: .cgAnnotatedSessionEventTap)
         }
+    }
+}
+
+// MARK: - Limit reached card
+
+private struct LimitReachedCard: View {
+    @StateObject private var auth = AuthStore.shared
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "bolt.fill")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(.orange)
+                        Text("Weekly limit reached")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(.white)
+                    }
+                    Text(subtitle)
+                        .font(.system(size: 11))
+                        .foregroundStyle(.white.opacity(0.5))
+                        .lineLimit(2)
+                }
+                Spacer(minLength: 8)
+                Button {
+                    FloatingOverlay.shared.show(.hidden)
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.4))
+                        .frame(width: 20, height: 20)
+                }
+                .buttonStyle(.plain)
+            }
+
+            Button {
+                FloatingOverlay.shared.show(.hidden)
+                NotificationCenter.default.post(name: .yapOpenAccount, object: nil)
+            } label: {
+                Text("Upgrade to Pro")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.black)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 6)
+                    .background(Capsule().fill(Color.mint))
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 14)
+        .frame(width: 320, height: 120)
+        .background(
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .fill(Color.black.opacity(0.92))
+        )
+    }
+
+    private var subtitle: String {
+        guard let user = auth.currentUser else { return "Free plan: 2,000 words/week." }
+        let limit = user.weekLimit ?? 2000
+        let reset = resetText(from: user.weekStart)
+        return "Used \(user.weekWords.formatted()) of \(limit.formatted()) words. \(reset)"
+    }
+
+    private func resetText(from weekStart: String) -> String {
+        let isoFull = ISO8601DateFormatter()
+        isoFull.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let isoBasic = ISO8601DateFormatter()
+        let start = isoFull.date(from: weekStart) ?? isoBasic.date(from: weekStart)
+        guard let start,
+              let nextReset = Calendar.current.date(byAdding: .day, value: 7, to: start),
+              nextReset > Date()
+        else { return "Resets weekly." }
+        let df = DateFormatter()
+        df.dateFormat = "EEE h:mm a"
+        return "Resets \(df.string(from: nextReset))."
     }
 }

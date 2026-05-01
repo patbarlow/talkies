@@ -11,6 +11,7 @@ struct SettingsView: View {
     @StateObject private var router = SettingsRouter.shared
     @StateObject private var auth = AuthStore.shared
     @Environment(\.colorScheme) private var colorScheme
+    @State private var hoveredPane: Pane?
 
     private var background: Color {
         colorScheme == .dark
@@ -119,6 +120,7 @@ struct SettingsView: View {
 
     private func sidebarRow(_ pane: Pane) -> some View {
         let selected = router.selection == pane
+        let hovered = hoveredPane == pane && !selected
         return Button {
             router.selection = pane
         } label: {
@@ -132,12 +134,13 @@ struct SettingsView: View {
             .padding(.vertical, 5)
             .background(
                 RoundedRectangle(cornerRadius: 6)
-                    .fill(selected ? Color.accentColor : Color.clear)
+                    .fill(selected ? Color.accentColor : hovered ? Color.primary.opacity(0.08) : Color.clear)
             )
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .padding(.horizontal, 10)
+        .onHover { isHovering in hoveredPane = isHovering ? pane : nil }
     }
 
     private func sectionHeader(_ title: String) -> some View {
