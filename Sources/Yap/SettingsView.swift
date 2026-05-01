@@ -176,6 +176,8 @@ struct SettingsView: View {
 
 struct HomePane: View {
     @StateObject private var stats = Stats.shared
+    @StateObject private var auth = AuthStore.shared
+    @StateObject private var library = Library.shared
 
     var body: some View {
         VStack(alignment: .leading, spacing: 24) {
@@ -186,10 +188,15 @@ struct HomePane: View {
                     .foregroundStyle(.secondary)
             }
 
+            // Prefer server totals (cross-device, source of truth); fall back to local
+            // while the user object is loading or if offline.
+            let weekWords  = auth.currentUser?.weekWords  ?? stats.weekWords
+            let totalWords = auth.currentUser?.totalWords ?? stats.totalWords
+
             HStack(spacing: 0) {
-                StatCell(value: stats.weekWords.formatted(), unit: nil, label: "Words this week")
+                StatCell(value: weekWords.formatted(),  unit: nil,   label: "Words this week")
                 StatDivider()
-                StatCell(value: stats.totalWords.formatted(), unit: nil, label: "Total words")
+                StatCell(value: totalWords.formatted(), unit: nil,   label: "Total words")
                 StatDivider()
                 StatCell(value: "\(Int(stats.averageWPM))", unit: "WPM", label: "Average speed")
             }
@@ -197,43 +204,165 @@ struct HomePane: View {
             .background(RoundedRectangle(cornerRadius: 14).fill(Color(nsColor: .controlBackgroundColor)))
             .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.primary.opacity(0.08)))
 
-            VStack(alignment: .leading, spacing: 0) {
-                Text("Get started")
-                    .font(.body.weight(.semibold))
-                    .padding(.bottom, 8)
-
-                ChecklistRow(
-                    symbol: "smallcircle.filled.circle",
-                    title: "Start recording",
-                    subtitle: "Hold \(Settings.shared.hotkey.label) and speak. Release to paste."
-                ) {
-                    Text(Settings.shared.hotkey.label)
-                        .font(.caption.monospaced())
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 3)
-                        .background(RoundedRectangle(cornerRadius: 5).fill(Color.secondary.opacity(0.15)))
-                }
-                ChecklistRow(
-                    symbol: "hand.point.up.left",
-                    title: "Customize your shortcut",
-                    subtitle: "Change the push-to-talk key in Hotkey settings."
-                )
-                ChecklistRow(
-                    symbol: "sparkles",
-                    title: "Turn on cleanup",
-                    subtitle: "Fix mis-hearings and strip filler words automatically."
-                )
-                ChecklistRow(
-                    symbol: "book",
-                    title: "Add vocabulary",
-                    subtitle: "Teach Yap names, jargon, or product terms."
-                )
+            if !library.entries.isEmpty {
+                InsightsCard(entries: library.entries)
             }
-            .padding(18)
-            .background(RoundedRectangle(cornerRadius: 14).fill(Color(nsColor: .controlBackgroundColor)))
-            .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.primary.opacity(0.08)))
 
             Spacer(minLength: 0)
+        }
+        .task { await auth.refresh() }
+    }
+}
+
+private struct InsightsCard: View {
+    let entries: [RecordingEntry]
+
+    private var topApps: [(name: String, words: Int)] {
+        Dictionary(grouping: entries.filter { $0.appName != nil }, by: { $0.appName! })
+            .map { ($0.key, $0.value.reduce(0) { $0 + $1.wordCount }) }
+            .sorted { $0.1 > $1.1 }
+            .prefix(3)
+            .map { $0 }
+    }
+
+    private var peakHour: Int? {
+        Dictionary(grouping: entries, by: { Calendar.current.component(.hour, from: $0.timestamp) })
+            .mapValues { $0.count }
+            .max(by: { $0.value < $1.value })?.key
+    }
+
+    private var peakWeekday: Int? {
+        Dictionary(grouping: entries, by: { Calendar.current.component(.weekday, from: $0.timestamp) })
+            .mapValues { $0.count }
+            .max(by: { $0.value < $1.value })?.key
+    }
+
+    private var topAppPerWeekday: [(day: String, app: String)] {
+        let cal = Calendar.current
+        let syms = cal.shortWeekdaySymbols
+        let byDay = Dictionary(
+            grouping: entries.filter { $0.appName != nil },
+            by: { cal.component(.weekday, from: $0.timestamp) }
+        )
+        return (1...7).compactMap { wd -> (String, String)? in
+            guard let day = byDay[wd] else { return nil }
+            let top = Dictionary(grouping: day, by: { $0.appName! })
+                .mapValues { $0.reduce(0) { $0 + $1.wordCount } }
+                .max(by: { $0.value < $1.value })?.key
+            guard let top else { return nil }
+            return (syms[wd - 1], top)
+        }
+    }
+
+    private func hourRangeLabel(_ hour: Int) -> String {
+        var c1 = DateComponents(); c1.hour = hour
+        var c2 = DateComponents(); c2.hour = (hour + 1) % 24
+        let fmt = DateFormatter(); fmt.dateFormat = "ha"
+        let cal = Calendar.current
+        let d1 = cal.date(from: c1) ?? Date()
+        let d2 = cal.date(from: c2) ?? Date()
+        return "\(fmt.string(from: d1).lowercased())–\(fmt.string(from: d2).lowercased())"
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Your patterns")
+                .font(.body.weight(.semibold))
+
+            let apps = topApps
+            if !apps.isEmpty {
+                topAppsSection(apps)
+            }
+
+            let hour = peakHour
+            let wd   = peakWeekday
+            if hour != nil || wd != nil {
+                Divider()
+                HStack(alignment: .top, spacing: 32) {
+                    if let hour {
+                        insightCell(label: "Peak hour", value: hourRangeLabel(hour))
+                    }
+                    if let wd {
+                        insightCell(label: "Most active day",
+                                    value: Calendar.current.weekdaySymbols[wd - 1])
+                    }
+                }
+            }
+
+            let perDay = topAppPerWeekday
+            if perDay.count >= 2 {
+                Divider()
+                perDaySection(perDay)
+            }
+        }
+        .padding(18)
+        .background(RoundedRectangle(cornerRadius: 14).fill(Color(nsColor: .controlBackgroundColor)))
+        .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.primary.opacity(0.08)))
+    }
+
+    @ViewBuilder
+    private func topAppsSection(_ apps: [(name: String, words: Int)]) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Top apps")
+                .font(.caption.weight(.medium))
+                .foregroundStyle(.secondary)
+            let maxWords = CGFloat(apps.first?.words ?? 1)
+            ForEach(Array(apps.enumerated()), id: \.offset) { i, app in
+                HStack(spacing: 8) {
+                    Text("#\(i + 1)")
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(.tertiary)
+                        .frame(width: 22, alignment: .leading)
+                    Text(app.name)
+                        .font(.callout)
+                        .lineLimit(1)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    ZStack(alignment: .leading) {
+                        Capsule().fill(Color.secondary.opacity(0.1)).frame(width: 90, height: 6)
+                        Capsule().fill(Color.mint)
+                            .frame(width: 90 * CGFloat(app.words) / maxWords, height: 6)
+                    }
+                    Text(app.words.formatted())
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                        .frame(width: 48, alignment: .trailing)
+                }
+            }
+        }
+    }
+
+    private func insightCell(label: String, value: String) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(label)
+                .font(.caption.weight(.medium))
+                .foregroundStyle(.secondary)
+            Text(value)
+                .font(.callout.weight(.medium))
+        }
+    }
+
+    @ViewBuilder
+    private func perDaySection(_ items: [(day: String, app: String)]) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Top app by day")
+                .font(.caption.weight(.medium))
+                .foregroundStyle(.secondary)
+            LazyVGrid(
+                columns: [GridItem(.flexible()), GridItem(.flexible()),
+                          GridItem(.flexible()), GridItem(.flexible())],
+                alignment: .leading, spacing: 8
+            ) {
+                ForEach(items, id: \.day) { item in
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(item.day)
+                            .font(.caption2.weight(.medium))
+                            .foregroundStyle(.secondary)
+                        Text(item.app)
+                            .font(.caption)
+                            .lineLimit(1)
+                    }
+                }
+            }
         }
     }
 }
@@ -270,43 +399,6 @@ private struct StatDivider: View {
             .fill(Color.secondary.opacity(0.18))
             .frame(width: 1, height: 44)
             .padding(.horizontal, 6)
-    }
-}
-
-private struct ChecklistRow<Trailing: View>: View {
-    let symbol: String
-    let title: String
-    let subtitle: String
-    var trailing: Trailing
-
-    init(symbol: String, title: String, subtitle: String, @ViewBuilder trailing: () -> Trailing) {
-        self.symbol = symbol
-        self.title = title
-        self.subtitle = subtitle
-        self.trailing = trailing()
-    }
-
-    var body: some View {
-        HStack(alignment: .top, spacing: 14) {
-            Image(systemName: symbol)
-                .font(.system(size: 16))
-                .foregroundStyle(.secondary)
-                .frame(width: 22, height: 22, alignment: .center)
-                .padding(.top, 1)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title).font(.body.weight(.medium))
-                Text(subtitle).font(.callout).foregroundStyle(.secondary)
-            }
-            Spacer()
-            trailing
-        }
-        .padding(.vertical, 10)
-    }
-}
-
-extension ChecklistRow where Trailing == EmptyView {
-    init(symbol: String, title: String, subtitle: String) {
-        self.init(symbol: symbol, title: title, subtitle: subtitle) { EmptyView() }
     }
 }
 

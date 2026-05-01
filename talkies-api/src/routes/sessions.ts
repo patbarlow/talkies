@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import type { Env } from "../env";
 import { requireAuth, type AuthVariables } from "../middleware/auth";
+import { recomputeUserStats } from "../db";
 
 const app = new Hono<{ Bindings: Env; Variables: AuthVariables }>();
 
@@ -64,6 +65,10 @@ app.post("/", async (c) => {
   );
 
   await c.env.DB.batch(stmts);
+
+  // Sessions table is the source of truth — recompute user totals so every
+  // device's contributions are reflected without any double-counting.
+  await recomputeUserStats(c.env.DB, user);
 
   return c.json({ ok: true, inserted: events.length });
 });

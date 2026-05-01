@@ -131,6 +131,26 @@ export async function recordUsage(
     .run();
 }
 
+// Recompute week_words, total_words, and session_count directly from the
+// sessions table so the user row is always consistent with the session log
+// regardless of which device or code path inserted the sessions.
+export async function recomputeUserStats(db: D1Database, user: User): Promise<void> {
+  const rotated = await rotateWeekIfNeeded(db, user);
+  await db
+    .prepare(
+      `UPDATE users SET
+         week_words    = (SELECT COALESCE(SUM(s.word_count),0) FROM sessions s
+                          WHERE s.user_id = users.id AND s.recorded_at >= ?),
+         total_words   = (SELECT COALESCE(SUM(s.word_count),0) FROM sessions s
+                          WHERE s.user_id = users.id),
+         session_count = (SELECT COUNT(*) FROM sessions s WHERE s.user_id = users.id),
+         updated_at    = ?
+       WHERE id = ?`,
+    )
+    .bind(rotated.week_start, nowISO(), user.id)
+    .run();
+}
+
 export async function updatePlanByStripeCustomer(
   db: D1Database,
   customerId: string,

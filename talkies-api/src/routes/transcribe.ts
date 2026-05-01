@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import type { Env } from "../env";
 import { requireAuth, type AuthVariables } from "../middleware/auth";
-import { recordUsage, WEEK_LIMIT_FREE } from "../db";
+import { WEEK_LIMIT_FREE } from "../db";
 
 const app = new Hono<{ Bindings: Env; Variables: AuthVariables }>();
 
@@ -57,12 +57,9 @@ app.post("/", async (c) => {
   const text = (result.text ?? "").trim();
   const wordCount = text.split(/\s+/).filter(Boolean).length;
 
-  // Best-effort increment. If this fails the user got a free one — log and move on.
-  try {
-    await recordUsage(c.env.DB, user.id, wordCount);
-  } catch (e) {
-    console.error("recordUsage failed:", e);
-  }
+  // Word counts are maintained by the /sessions sync endpoint (recomputeUserStats)
+  // so we don't update them here. The client syncs the session immediately after
+  // transcription, keeping the server totals accurate without double-counting.
 
   return c.json({ text, wordCount });
 });
