@@ -1,4 +1,11 @@
 {
+  "name": "talkies",
+  "version": "1.0.0",
+  "description": "Voice integration for Talkies — shows a review card when Claude finishes a task so you can speak your next command. Transcribes and auto-submits your reply.",
+  "author": {
+    "name": "Talkies",
+    "url": "https://patbarlow.github.io/talkies"
+  },
   "hooks": {
     "Stop": [
       {
