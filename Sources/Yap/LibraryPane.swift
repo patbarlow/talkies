@@ -143,7 +143,7 @@ private struct EntryRow: View {
                     .font(.body)
                     .lineLimit(4)
                 HStack(spacing: 6) {
-                    Text(entry.timestamp.formatted(date: .omitted, time: .shortened))
+                    Text(entry.timestamp.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day().hour().minute()))
                     Text("·")
                     Text("\(entry.wordCount) word\(entry.wordCount == 1 ? "" : "s")")
                     if let app = entry.appName {

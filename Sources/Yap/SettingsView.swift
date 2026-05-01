@@ -179,14 +179,26 @@ struct HomePane: View {
     @StateObject private var auth = AuthStore.shared
     @StateObject private var library = Library.shared
 
+    private var greetingText: String {
+        let hour = Calendar.current.component(.hour, from: Date())
+        let base: String
+        switch hour {
+        case 5..<12: base = "Good morning"
+        case 12..<17: base = "Good afternoon"
+        default:      base = "Good evening"
+        }
+        if let name = auth.currentUser?.name,
+           let first = name.split(separator: " ").first.map(String.init),
+           !first.isEmpty {
+            return "\(base), \(first)"
+        }
+        return base
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 24) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Welcome back")
-                    .font(.largeTitle.bold())
-                Text("Hold **\(Settings.shared.hotkey.label)** anywhere to dictate.")
-                    .foregroundStyle(.secondary)
-            }
+            Text(greetingText)
+                .font(.largeTitle.bold())
 
             // Prefer server totals (cross-device, source of truth); fall back to local
             // while the user object is loading or if offline.
@@ -195,9 +207,7 @@ struct HomePane: View {
 
             HStack(spacing: 0) {
                 StatCell(value: weekWords.formatted(),  unit: nil,   label: "Words this week")
-                StatDivider()
                 StatCell(value: totalWords.formatted(), unit: nil,   label: "Total words")
-                StatDivider()
                 StatCell(value: "\(Int(stats.averageWPM))", unit: "WPM", label: "Average speed")
             }
             .padding(20)
@@ -277,25 +287,35 @@ private struct InsightsCard: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        let apps = topApps
+        let days = wordsByDay
+        let hours = topHours
+        let hasDays = days.contains(where: { $0.words > 0 })
+
+        VStack(alignment: .leading, spacing: 14) {
             Text("Your patterns")
                 .font(.body.weight(.semibold))
 
-            let apps = topApps
-            if !apps.isEmpty {
-                topAppsSection(apps)
-            }
+            HStack(alignment: .top, spacing: 0) {
+                if !apps.isEmpty {
+                    topAppsSection(apps)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
 
-            let days = wordsByDay
-            if days.contains(where: { $0.words > 0 }) {
-                Divider()
-                byDaySection(days)
-            }
+                if !apps.isEmpty && (hasDays || !hours.isEmpty) {
+                    Rectangle()
+                        .fill(Color.primary.opacity(0.08))
+                        .frame(width: 1)
+                        .padding(.horizontal, 16)
+                }
 
-            let hours = topHours
-            if !hours.isEmpty {
-                Divider()
-                byHourSection(hours)
+                if hasDays || !hours.isEmpty {
+                    VStack(alignment: .leading, spacing: 14) {
+                        if hasDays { byDaySection(days) }
+                        if !hours.isEmpty { byHourSection(hours) }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
             }
         }
         .padding(18)
@@ -305,21 +325,18 @@ private struct InsightsCard: View {
 
     @ViewBuilder
     private func topAppsSection(_ apps: [AppUsage]) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 8) {
             Text("Top apps")
                 .font(.caption.weight(.medium))
                 .foregroundStyle(.secondary)
             ForEach(apps) { app in
-                HStack(spacing: 10) {
-                    AppIconView(bundleID: app.bundleID, size: 28)
-                    Text(app.name)
-                        .font(.callout)
-                        .lineLimit(1)
-                    Spacer(minLength: 0)
-                    VStack(alignment: .trailing, spacing: 1) {
-                        Text("\(app.words.formatted()) words")
-                            .font(.caption.monospacedDigit())
-                        Text("\(app.sessions) session\(app.sessions == 1 ? "" : "s")")
+                HStack(spacing: 8) {
+                    AppIconView(bundleID: app.bundleID, size: 22)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(app.name)
+                            .font(.caption.weight(.medium))
+                            .lineLimit(1)
+                        Text("\(app.words.formatted()) words · \(app.sessions) session\(app.sessions == 1 ? "" : "s")")
                             .font(.caption2.monospacedDigit())
                             .foregroundStyle(.secondary)
                     }
@@ -412,15 +429,6 @@ private struct StatCell: View {
                 .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-    }
-}
-
-private struct StatDivider: View {
-    var body: some View {
-        Rectangle()
-            .fill(Color.secondary.opacity(0.18))
-            .frame(width: 1, height: 44)
-            .padding(.horizontal, 6)
     }
 }
 

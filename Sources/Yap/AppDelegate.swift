@@ -238,6 +238,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         settings.target = self
         menu.addItem(settings)
 
+        let checkForUpdates = NSMenuItem(
+            title: "Check for Updates…",
+            action: #selector(SPUStandardUpdaterController.checkForUpdates(_:)),
+            keyEquivalent: ""
+        )
+        checkForUpdates.target = updaterController
+        menu.addItem(checkForUpdates)
+
         menu.addItem(.separator())
         menu.addItem(NSMenuItem(title: "Quit Yap", action: #selector(NSApp.terminate(_:)), keyEquivalent: "q"))
 
