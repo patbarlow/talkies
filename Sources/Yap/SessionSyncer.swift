@@ -12,6 +12,9 @@ final class SessionSyncer {
         do {
             try await APIClient.shared.syncSessions(events: [entry], session: session)
             Library.shared.markSynced(ids: [entry.id])
+            // Server recomputed user totals from sessions — pull fresh counts so
+            // both the Home and Account screens reflect the updated number.
+            await AuthStore.shared.refresh()
         } catch {
             // Will be picked up by syncPending on next launch
         }
@@ -22,14 +25,17 @@ final class SessionSyncer {
         let pending = Library.shared.entries.filter { $0.syncedAt == nil }
         guard !pending.isEmpty else { return }
 
+        var synced = false
         for chunk in pending.chunked(into: batchSize) {
             do {
                 try await APIClient.shared.syncSessions(events: chunk, session: session)
                 Library.shared.markSynced(ids: chunk.map { $0.id })
+                synced = true
             } catch {
                 break
             }
         }
+        if synced { await AuthStore.shared.refresh() }
     }
 }
 
