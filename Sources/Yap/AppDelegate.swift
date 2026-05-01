@@ -73,8 +73,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             MainActor.assumeIsolated { self?.reconcile() }
         }
 
-        // Any window closing (Settings, Sparkle update panel, etc.) → revert to
-        // accessory mode if no other windows remain visible.
+        // Any titled window closing (Settings, Sparkle update panel, etc.) → revert
+        // to accessory mode if no other titled windows remain visible.
+        // Filtering to .titled excludes the status-bar's internal NSStatusBarWindow
+        // which is always "visible" and would otherwise block the check.
         NotificationCenter.default.addObserver(
             forName: NSWindow.willCloseNotification,
             object: nil,
@@ -82,7 +84,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         ) { [weak self] note in
             guard self != nil else { return }
             let closing = note.object as? NSWindow
-            if NSApp.windows.allSatisfy({ $0 === closing || !$0.isVisible }) {
+            let titled = NSApp.windows.filter { $0.styleMask.contains(.titled) }
+            if titled.allSatisfy({ $0 === closing || !$0.isVisible }) {
                 NSApp.setActivationPolicy(.accessory)
             }
         }
