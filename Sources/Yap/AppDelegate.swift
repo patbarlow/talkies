@@ -73,6 +73,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             MainActor.assumeIsolated { self?.reconcile() }
         }
 
+        // Any window closing (Settings, Sparkle update panel, etc.) → revert to
+        // accessory mode if no other windows remain visible.
+        NotificationCenter.default.addObserver(
+            forName: NSWindow.willCloseNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] note in
+            guard self != nil else { return }
+            let closing = note.object as? NSWindow
+            if NSApp.windows.allSatisfy({ $0 === closing || !$0.isVisible }) {
+                NSApp.setActivationPolicy(.accessory)
+            }
+        }
+
         UserDefaults.standard.set(true, forKey: "hasLaunchedBefore")
         // Settle a moment so the menu-bar icon draws first, then reconcile.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
@@ -240,10 +254,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let checkForUpdates = NSMenuItem(
             title: "Check for Updates…",
-            action: #selector(SPUStandardUpdaterController.checkForUpdates(_:)),
+            action: #selector(checkForUpdates(_:)),
             keyEquivalent: ""
         )
-        checkForUpdates.target = updaterController
+        checkForUpdates.target = self
         menu.addItem(checkForUpdates)
 
         menu.addItem(.separator())
@@ -451,6 +465,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    // MARK: - Updates
+
+    // Wrapper so the menu bar item can trigger Sparkle without the Settings window
+    // being open. Promotes to .regular so Sparkle's window can appear, then forwards.
+    @objc private func checkForUpdates(_ sender: Any?) {
+        NSApp.setActivationPolicy(.regular)
+        NSApp.activate(ignoringOtherApps: true)
+        updaterController.checkForUpdates(sender)
+    }
+
     // MARK: - Settings window
 
     @objc private func openSettings() {
@@ -522,12 +546,8 @@ extension AppDelegate: NSMenuDelegate {
 
 extension AppDelegate: NSWindowDelegate {
     nonisolated func windowWillClose(_ notification: Notification) {
-        Task { @MainActor in
-            guard let window = notification.object as? NSWindow,
-                  window === self.settingsWindow else { return }
-            // Back to menu-bar-only accessory app once Settings closes.
-            NSApp.setActivationPolicy(.accessory)
-        }
+        // Activation policy is handled by the global NSWindow.willCloseNotification
+        // observer registered in applicationDidFinishLaunching.
     }
 
     nonisolated func windowDidBecomeKey(_ notification: Notification) {
