@@ -253,9 +253,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func refreshStatus() {
+        let auth = AuthStore.shared
         let stats = Stats.shared
-        weekWordsItem.title = "Words this week: \(stats.weekWords.formatted())"
-        totalWordsItem.title = "Total words: \(stats.totalWords.formatted())"
+        let weekWords = auth.currentUser?.weekWords ?? stats.weekWords
+        let totalWords = auth.currentUser?.totalWords ?? stats.totalWords
+        weekWordsItem.title = "Words this week: \(weekWords.formatted())"
+        totalWordsItem.title = "Total words: \(totalWords.formatted())"
         let wpm = stats.averageWPM
         wpmItem.title = wpm > 0
             ? "Average speed: \(Int(wpm)) WPM"
@@ -402,7 +405,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 appName: target?.localizedName,
                 bundleID: target?.bundleIdentifier,
                 cleanupLevel: cleanupLevel.rawValue,
-                language: language.whisperCode
+                language: language.whisperCode,
+                deviceName: Host.current().localizedName ?? "This Mac"
             ) {
                 Task { await SessionSyncer.shared.syncEntry(entry) }
             }

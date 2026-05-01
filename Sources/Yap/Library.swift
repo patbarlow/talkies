@@ -12,6 +12,7 @@ struct RecordingEntry: Codable, Identifiable, Hashable {
     let bundleID: String?
     let cleanupLevel: String?
     let language: String?
+    let deviceName: String?
     var syncedAt: Date?
 }
 
@@ -46,7 +47,8 @@ final class Library: ObservableObject {
         appName: String?,
         bundleID: String?,
         cleanupLevel: String?,
-        language: String?
+        language: String?,
+        deviceName: String?
     ) -> RecordingEntry? {
         let wc = final.split(whereSeparator: { $0.isWhitespace }).count
         guard wc > 0 else { return nil }
@@ -61,6 +63,7 @@ final class Library: ObservableObject {
             bundleID: bundleID,
             cleanupLevel: cleanupLevel,
             language: language,
+            deviceName: deviceName,
             syncedAt: nil
         )
         entries.insert(entry, at: 0)

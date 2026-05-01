@@ -217,41 +217,53 @@ struct HomePane: View {
 private struct InsightsCard: View {
     let entries: [RecordingEntry]
 
-    private var topApps: [(name: String, words: Int)] {
+    private struct AppUsage: Identifiable {
+        let id = UUID()
+        let name: String
+        let bundleID: String?
+        let words: Int
+        let sessions: Int
+    }
+
+    private var topApps: [AppUsage] {
         Dictionary(grouping: entries.filter { $0.appName != nil }, by: { $0.appName! })
-            .map { ($0.key, $0.value.reduce(0) { $0 + $1.wordCount }) }
-            .sorted { $0.1 > $1.1 }
-            .prefix(3)
+            .map { name, group in
+                AppUsage(
+                    name: name,
+                    bundleID: group.first?.bundleID,
+                    words: group.reduce(0) { $0 + $1.wordCount },
+                    sessions: group.count
+                )
+            }
+            .sorted { $0.words > $1.words }
+            .prefix(5)
             .map { $0 }
     }
 
-    private var peakHour: Int? {
-        Dictionary(grouping: entries, by: { Calendar.current.component(.hour, from: $0.timestamp) })
-            .mapValues { $0.count }
-            .max(by: { $0.value < $1.value })?.key
-    }
-
-    private var peakWeekday: Int? {
-        Dictionary(grouping: entries, by: { Calendar.current.component(.weekday, from: $0.timestamp) })
-            .mapValues { $0.count }
-            .max(by: { $0.value < $1.value })?.key
-    }
-
-    private var topAppPerWeekday: [(day: String, app: String)] {
+    private var wordsByDay: [(label: String, words: Int, pct: Double)] {
         let cal = Calendar.current
-        let syms = cal.shortWeekdaySymbols
-        let byDay = Dictionary(
-            grouping: entries.filter { $0.appName != nil },
-            by: { cal.component(.weekday, from: $0.timestamp) }
-        )
-        return (1...7).compactMap { wd -> (String, String)? in
-            guard let day = byDay[wd] else { return nil }
-            let top = Dictionary(grouping: day, by: { $0.appName! })
-                .mapValues { $0.reduce(0) { $0 + $1.wordCount } }
-                .max(by: { $0.value < $1.value })?.key
-            guard let top else { return nil }
-            return (syms[wd - 1], top)
+        let byDay = Dictionary(grouping: entries, by: { cal.component(.weekday, from: $0.timestamp) })
+        let total = entries.reduce(0) { $0 + $1.wordCount }
+        guard total > 0 else { return [] }
+        // Mon(2) Tue(3) Wed(4) Thu(5) Fri(6) Sat(7) Sun(1)
+        let order: [(Int, String)] = [(2,"Mon"),(3,"Tue"),(4,"Wed"),(5,"Thu"),(6,"Fri"),(7,"Sat"),(1,"Sun")]
+        return order.map { wd, label in
+            let words = (byDay[wd] ?? []).reduce(0) { $0 + $1.wordCount }
+            return (label, words, Double(words) / Double(total))
         }
+    }
+
+    private var topHours: [(label: String, pct: Double)] {
+        let byHour = Dictionary(grouping: entries, by: { Calendar.current.component(.hour, from: $0.timestamp) })
+        let total = entries.reduce(0) { $0 + $1.wordCount }
+        guard total > 0 else { return [] }
+        return byHour
+            .map { hour, group in
+                (hourRangeLabel(hour), Double(group.reduce(0) { $0 + $1.wordCount }) / Double(total))
+            }
+            .sorted { $0.1 > $1.1 }
+            .prefix(4)
+            .map { $0 }
     }
 
     private func hourRangeLabel(_ hour: Int) -> String {
@@ -274,25 +286,16 @@ private struct InsightsCard: View {
                 topAppsSection(apps)
             }
 
-            let hour = peakHour
-            let wd   = peakWeekday
-            if hour != nil || wd != nil {
+            let days = wordsByDay
+            if days.contains(where: { $0.words > 0 }) {
                 Divider()
-                HStack(alignment: .top, spacing: 32) {
-                    if let hour {
-                        insightCell(label: "Peak hour", value: hourRangeLabel(hour))
-                    }
-                    if let wd {
-                        insightCell(label: "Most active day",
-                                    value: Calendar.current.weekdaySymbols[wd - 1])
-                    }
-                }
+                byDaySection(days)
             }
 
-            let perDay = topAppPerWeekday
-            if perDay.count >= 2 {
+            let hours = topHours
+            if !hours.isEmpty {
                 Divider()
-                perDaySection(perDay)
+                byHourSection(hours)
             }
         }
         .padding(18)
@@ -301,66 +304,85 @@ private struct InsightsCard: View {
     }
 
     @ViewBuilder
-    private func topAppsSection(_ apps: [(name: String, words: Int)]) -> some View {
+    private func topAppsSection(_ apps: [AppUsage]) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Top apps")
                 .font(.caption.weight(.medium))
                 .foregroundStyle(.secondary)
-            let maxWords = CGFloat(apps.first?.words ?? 1)
-            ForEach(Array(apps.enumerated()), id: \.offset) { i, app in
-                HStack(spacing: 8) {
-                    Text("#\(i + 1)")
-                        .font(.caption.monospacedDigit())
-                        .foregroundStyle(.tertiary)
-                        .frame(width: 22, alignment: .leading)
+            ForEach(apps) { app in
+                HStack(spacing: 10) {
+                    AppIconView(bundleID: app.bundleID, size: 28)
                     Text(app.name)
                         .font(.callout)
                         .lineLimit(1)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    ZStack(alignment: .leading) {
-                        Capsule().fill(Color.secondary.opacity(0.1)).frame(width: 90, height: 6)
-                        Capsule().fill(Color.mint)
-                            .frame(width: 90 * CGFloat(app.words) / maxWords, height: 6)
+                    Spacer(minLength: 0)
+                    VStack(alignment: .trailing, spacing: 1) {
+                        Text("\(app.words.formatted()) words")
+                            .font(.caption.monospacedDigit())
+                        Text("\(app.sessions) session\(app.sessions == 1 ? "" : "s")")
+                            .font(.caption2.monospacedDigit())
+                            .foregroundStyle(.secondary)
                     }
-                    Text(app.words.formatted())
-                        .font(.caption.monospacedDigit())
-                        .foregroundStyle(.secondary)
-                        .frame(width: 48, alignment: .trailing)
                 }
             }
         }
     }
 
-    private func insightCell(label: String, value: String) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Text(label)
+    @ViewBuilder
+    private func byDaySection(_ days: [(label: String, words: Int, pct: Double)]) -> some View {
+        let maxPct = days.map(\.pct).max() ?? 1
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Words by day")
                 .font(.caption.weight(.medium))
                 .foregroundStyle(.secondary)
-            Text(value)
-                .font(.callout.weight(.medium))
+            HStack(alignment: .bottom, spacing: 0) {
+                ForEach(days, id: \.label) { item in
+                    VStack(spacing: 3) {
+                        Spacer(minLength: 0)
+                        if item.words > 0 {
+                            Text("\(Int(item.pct * 100))%")
+                                .font(.system(size: 8).monospacedDigit())
+                                .foregroundStyle(.secondary)
+                        }
+                        RoundedRectangle(cornerRadius: 2, style: .continuous)
+                            .fill(item.pct == maxPct ? Color.mint : Color.mint.opacity(0.3))
+                            .frame(height: max(3, 36 * CGFloat(item.pct / (maxPct > 0 ? maxPct : 1))))
+                        Text(item.label)
+                            .font(.system(size: 9).weight(.medium))
+                            .foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity)
+                }
+            }
+            .frame(height: 60)
         }
     }
 
     @ViewBuilder
-    private func perDaySection(_ items: [(day: String, app: String)]) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("Top app by day")
+    private func byHourSection(_ hours: [(label: String, pct: Double)]) -> some View {
+        let maxPct = hours.map(\.pct).max() ?? 1
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Peak hours")
                 .font(.caption.weight(.medium))
                 .foregroundStyle(.secondary)
-            LazyVGrid(
-                columns: [GridItem(.flexible()), GridItem(.flexible()),
-                          GridItem(.flexible()), GridItem(.flexible())],
-                alignment: .leading, spacing: 8
-            ) {
-                ForEach(items, id: \.day) { item in
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(item.day)
-                            .font(.caption2.weight(.medium))
-                            .foregroundStyle(.secondary)
-                        Text(item.app)
-                            .font(.caption)
-                            .lineLimit(1)
+            ForEach(hours, id: \.label) { item in
+                HStack(spacing: 8) {
+                    Text(item.label)
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                        .frame(width: 80, alignment: .leading)
+                    ZStack(alignment: .leading) {
+                        Capsule()
+                            .fill(Color.secondary.opacity(0.1))
+                            .frame(width: 140, height: 5)
+                        Capsule()
+                            .fill(Color.mint.opacity(0.8))
+                            .frame(width: 140 * CGFloat(item.pct / maxPct), height: 5)
                     }
+                    Text("\(Int(item.pct * 100))%")
+                        .font(.caption2.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                        .frame(width: 28, alignment: .trailing)
                 }
             }
         }

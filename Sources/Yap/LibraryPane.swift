@@ -142,14 +142,19 @@ private struct EntryRow: View {
                 Text(entry.finalText)
                     .font(.body)
                     .lineLimit(4)
-                HStack(spacing: 8) {
+                HStack(spacing: 6) {
                     Text(entry.timestamp.formatted(date: .omitted, time: .shortened))
                     Text("·")
                     Text("\(entry.wordCount) word\(entry.wordCount == 1 ? "" : "s")")
                     if let app = entry.appName {
                         Text("·")
+                        AppIconView(bundleID: entry.bundleID, size: 13)
                         Text(app)
                     }
+                    Text("·")
+                    Image(systemName: "laptopcomputer")
+                        .font(.system(size: 10))
+                    Text(entry.deviceName ?? "This Mac")
                 }
                 .font(.caption)
                 .foregroundStyle(.secondary)
