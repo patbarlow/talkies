@@ -507,9 +507,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // chrome, a menu bar (File / Edit / Window), and Cmd-Tab switching
         // while Settings is open. Flips back to accessory on close.
         NSApp.setActivationPolicy(.regular)
-
-        settingsWindow?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+        settingsWindow?.makeKeyAndOrderFront(nil)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
             self?.forcehideTitlebarSeparator()
         }

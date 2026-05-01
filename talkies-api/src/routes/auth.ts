@@ -3,6 +3,7 @@ import type { Env } from "../env";
 import { upsertUserByEmail, publicUser } from "../db";
 import { issueSession } from "../session";
 import { generateCode, hashCode, sendCodeEmail, isValidEmail } from "../email";
+import { fireEvent } from "../events";
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -110,7 +111,8 @@ app.post("/email/verify", async (c) => {
   // Success — one-shot code, delete it immediately.
   await c.env.DB.prepare("DELETE FROM email_codes WHERE email = ?").bind(email).run();
 
-  const user = await upsertUserByEmail(c.env.DB, email, body.fullName);
+  const { user, isNew } = await upsertUserByEmail(c.env.DB, email, body.fullName);
+  if (isNew) fireEvent(c.env, "user.signed_up", user.email);
   const session = await issueSession(user.id, c.env.SESSION_SECRET);
   return c.json({ session, user: publicUser(user) });
 });

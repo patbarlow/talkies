@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import type { Env } from "../env";
 import { requireAuth, type AuthVariables } from "../middleware/auth";
 import { setStripeCustomerId, updatePlanByStripeCustomer } from "../db";
+import { fireEvent } from "../events";
 
 const app = new Hono<{ Bindings: Env; Variables: AuthVariables }>();
 
@@ -46,6 +47,10 @@ app.post("/checkout", requireAuth, async (c) => {
   }
 
   const session = (await checkoutRes.json()) as { url: string };
+  fireEvent(c.env, "checkout.started", user.email, {
+    total_words: user.total_words,
+    session_count: user.session_count,
+  });
   return c.json({ url: session.url });
 });
 
@@ -79,12 +84,24 @@ app.post("/webhook", async (c) => {
         status: string;
       };
       const plan = sub.status === "active" || sub.status === "trialing" ? "pro" : "free";
+      const preUpdate = await c.env.DB
+        .prepare("SELECT email, plan FROM users WHERE stripe_customer_id = ?")
+        .bind(sub.customer)
+        .first<{ email: string; plan: string }>();
       await updatePlanByStripeCustomer(c.env.DB, sub.customer, plan, sub.id);
+      if (plan === "pro" && preUpdate && preUpdate.plan !== "pro") {
+        fireEvent(c.env, "subscription.started", preUpdate.email);
+      }
       break;
     }
     case "customer.subscription.deleted": {
       const sub = event.data.object as { customer: string };
+      const preUpdate = await c.env.DB
+        .prepare("SELECT email FROM users WHERE stripe_customer_id = ?")
+        .bind(sub.customer)
+        .first<{ email: string }>();
       await updatePlanByStripeCustomer(c.env.DB, sub.customer, "free", null);
+      if (preUpdate) fireEvent(c.env, "subscription.cancelled", preUpdate.email);
       break;
     }
   }

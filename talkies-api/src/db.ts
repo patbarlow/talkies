@@ -47,7 +47,7 @@ export async function upsertUserByEmail(
   db: D1Database,
   email: string,
   name?: string,
-): Promise<User> {
+): Promise<{ user: User; isNew: boolean }> {
   const existing = await db
     .prepare("SELECT * FROM users WHERE email = ?")
     .bind(email)
@@ -61,7 +61,7 @@ export async function upsertUserByEmail(
         .run();
       existing.name = name;
     }
-    return existing;
+    return { user: existing, isNew: false };
   }
 
   const id = crypto.randomUUID();
@@ -79,20 +79,23 @@ export async function upsertUserByEmail(
     .run();
 
   return {
-    id,
-    email,
-    name: name ?? null,
-    plan: "free",
-    week_words: 0,
-    total_words: 0,
-    session_count: 0,
-    week_start: weekStart,
-    stripe_customer_id: null,
-    stripe_subscription_id: null,
-    apple_original_transaction_id: null,
-    avatar_data: null,
-    created_at: now,
-    updated_at: now,
+    user: {
+      id,
+      email,
+      name: name ?? null,
+      plan: "free",
+      week_words: 0,
+      total_words: 0,
+      session_count: 0,
+      week_start: weekStart,
+      stripe_customer_id: null,
+      stripe_subscription_id: null,
+      apple_original_transaction_id: null,
+      avatar_data: null,
+      created_at: now,
+      updated_at: now,
+    },
+    isNew: true,
   };
 }
 
