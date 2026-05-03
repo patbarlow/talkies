@@ -361,9 +361,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 FloatingOverlay.shared.show(.hidden)
                 return
             }
-            let final: String = Settings.shared.cleanupLevel != .off
-                ? ((try? await Cleaner.shared.clean(raw)) ?? raw)
-                : raw
+            let wordCount = trimmedRaw.split(whereSeparator: \.isWhitespace).count
+            let shouldClean = Settings.shared.cleanupLevel != .off && wordCount >= 4
+            let cleaned = shouldClean ? (try? await Cleaner.shared.clean(raw)) : nil
+            // Reject the cleaned result if it's suspiciously longer than the input —
+            // the LLM responded conversationally instead of cleaning.
+            let final: String
+            if let cleaned, cleaned.count <= trimmedRaw.count * 5 {
+                final = cleaned
+            } else {
+                final = raw
+            }
             guard !final.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
                 FloatingOverlay.shared.show(.hidden)
                 return
