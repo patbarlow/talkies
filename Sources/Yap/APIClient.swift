@@ -1,5 +1,25 @@
 import Foundation
 
+struct ServerPatterns: Codable, Equatable {
+    struct AppEntry: Codable, Equatable {
+        let appName: String
+        let bundleID: String?
+        let words: Int
+        let sessions: Int
+    }
+    struct WeekdayEntry: Codable, Equatable {
+        let weekday: Int // 0=Sun, 1=Mon … 6=Sat
+        let words: Int
+    }
+    struct HourEntry: Codable, Equatable {
+        let hour: Int
+        let words: Int
+    }
+    let topApps: [AppEntry]
+    let wordsByWeekday: [WeekdayEntry]
+    let wordsByHour: [HourEntry]
+}
+
 struct PublicUser: Codable, Equatable {
     let id: String
     let email: String
@@ -10,6 +30,7 @@ struct PublicUser: Codable, Equatable {
     let weekStart: String
     let weekLimit: Int?
     let hasAvatar: Bool
+    let patterns: ServerPatterns?
 }
 
 enum APIError: Error, LocalizedError {
@@ -112,7 +133,19 @@ final class APIClient {
     // MARK: - Me
 
     func me(session: String) async throws -> PublicUser {
-        let (data, status) = try await get(path: "/v1/me", session: session)
+        let offsetMinutes = TimeZone.current.secondsFromGMT() / 60
+        var components = URLComponents(url: baseURL.appendingPathComponent("/v1/me"), resolvingAgainstBaseURL: false)!
+        components.queryItems = [URLQueryItem(name: "tz", value: "\(offsetMinutes)")]
+        var request = URLRequest(url: components.url!)
+        request.httpMethod = "GET"
+        request.setValue("Bearer \(session)", forHTTPHeaderField: "Authorization")
+        let (data, response): (Data, URLResponse)
+        do {
+            (data, response) = try await URLSession.shared.data(for: request)
+        } catch {
+            throw APIError.transport(error)
+        }
+        let status = (response as? HTTPURLResponse)?.statusCode ?? -1
         if status == 401 { throw APIError.invalidSession }
         guard status == 200 else {
             throw APIError.http(status, String(data: data, encoding: .utf8) ?? "")
@@ -164,6 +197,7 @@ final class APIClient {
     struct TranscribeResponse: Decodable {
         let text: String
         let wordCount: Int
+        let limitReached: Bool?
     }
 
     func transcribe(

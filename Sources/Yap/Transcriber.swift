@@ -9,7 +9,7 @@ enum TranscriberError: Error {
 final class Transcriber {
     static let shared = Transcriber()
 
-    func transcribe(wavURL: URL) async throws -> String {
+    func transcribe(wavURL: URL) async throws -> (text: String, limitReached: Bool) {
         guard let session = await Settings.shared.sessionToken, !session.isEmpty else {
             throw TranscriberError.notSignedIn
         }
@@ -22,6 +22,6 @@ final class Transcriber {
             session: session
         )
         Task { await AuthStore.shared.refresh() }
-        return result.text
+        return (text: result.text, limitReached: result.limitReached ?? false)
     }
 }

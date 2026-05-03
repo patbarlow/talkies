@@ -17,6 +17,29 @@ export interface User {
 
 export const WEEK_LIMIT_FREE = 2_000;
 
+export interface AppPattern {
+  appName: string;
+  bundleID: string | null;
+  words: number;
+  sessions: number;
+}
+
+export interface WeekdayPattern {
+  weekday: number; // SQLite strftime %w: 0=Sun, 1=Mon … 6=Sat
+  words: number;
+}
+
+export interface HourPattern {
+  hour: number; // 0–23 UTC
+  words: number;
+}
+
+export interface Patterns {
+  topApps: AppPattern[];
+  wordsByWeekday: WeekdayPattern[]; // all 7 days
+  wordsByHour: HourPattern[];       // non-zero hours only
+}
+
 export interface PublicUser {
   id: string;
   email: string;
@@ -27,9 +50,10 @@ export interface PublicUser {
   weekStart: string;
   weekLimit: number | null;
   hasAvatar: boolean;
+  patterns: Patterns | null;
 }
 
-export function publicUser(u: User): PublicUser {
+export function publicUser(u: User, patterns: Patterns | null = null): PublicUser {
   return {
     id: u.id,
     email: u.email,
@@ -40,6 +64,70 @@ export function publicUser(u: User): PublicUser {
     weekStart: u.week_start,
     weekLimit: u.plan === "free" ? WEEK_LIMIT_FREE : null,
     hasAvatar: u.avatar_data != null && u.avatar_data.length > 0,
+    patterns,
+  };
+}
+
+export async function getPatterns(db: D1Database, userId: string, tzOffsetMinutes: number): Promise<Patterns> {
+  // Clamp offset to a sane range (±14 hours) and build an SQLite modifier string.
+  const clamped = Math.max(-840, Math.min(840, tzOffsetMinutes));
+  const sign = clamped >= 0 ? "+" : "-";
+  const absMin = Math.abs(clamped);
+  const hh = String(Math.floor(absMin / 60)).padStart(2, "0");
+  const mm = String(absMin % 60).padStart(2, "0");
+  const tzModifier = `${sign}${hh}:${mm}`;
+
+  const [appsRes, weekdayRes, hourRes] = await Promise.all([
+    db
+      .prepare(
+        `SELECT app_name, bundle_id, SUM(word_count) AS words, COUNT(*) AS sessions
+         FROM sessions
+         WHERE user_id = ? AND app_name IS NOT NULL
+         GROUP BY app_name, bundle_id
+         ORDER BY words DESC
+         LIMIT 5`,
+      )
+      .bind(userId)
+      .all<{ app_name: string; bundle_id: string | null; words: number; sessions: number }>(),
+
+    db
+      .prepare(
+        `SELECT CAST(strftime('%w', datetime(recorded_at, ?)) AS INTEGER) AS weekday,
+                SUM(word_count) AS words
+         FROM sessions
+         WHERE user_id = ?
+         GROUP BY weekday`,
+      )
+      .bind(tzModifier, userId)
+      .all<{ weekday: number; words: number }>(),
+
+    db
+      .prepare(
+        `SELECT CAST(strftime('%H', datetime(recorded_at, ?)) AS INTEGER) AS hour,
+                SUM(word_count) AS words
+         FROM sessions
+         WHERE user_id = ?
+         GROUP BY hour
+         ORDER BY words DESC`,
+      )
+      .bind(tzModifier, userId)
+      .all<{ hour: number; words: number }>(),
+  ]);
+
+  const wdMap = new Map((weekdayRes.results ?? []).map((r) => [r.weekday, r.words]));
+
+  return {
+    topApps: (appsRes.results ?? []).map((r) => ({
+      appName: r.app_name,
+      bundleID: r.bundle_id,
+      words: r.words,
+      sessions: r.sessions,
+    })),
+    wordsByWeekday: [0, 1, 2, 3, 4, 5, 6].map((wd) => ({
+      weekday: wd,
+      words: wdMap.get(wd) ?? 0,
+    })),
+    wordsByHour: hourRes.results ?? [],
   };
 }
 

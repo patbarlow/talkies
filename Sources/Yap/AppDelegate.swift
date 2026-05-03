@@ -428,6 +428,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func startRecording() {
         guard !isRecording else { return }
+        if let user = AuthStore.shared.currentUser, user.plan == "free" {
+            let limit = user.weekLimit ?? 2000
+            if user.weekWords >= limit {
+                FloatingOverlay.shared.show(.limitReached)
+                return
+            }
+        }
         do {
             try recorder.start()
             recordingStartedAt = Date()
@@ -459,7 +466,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         FloatingOverlay.shared.show(.processing)
         do {
-            let raw = try await Transcriber.shared.transcribe(wavURL: url)
+            let (raw, hitLimit) = try await Transcriber.shared.transcribe(wavURL: url)
             let trimmedRaw = raw.trimmingCharacters(in: .whitespacesAndNewlines)
             // Whisper returns "[BLANK_AUDIO]" (or lowercase variant) for silent recordings.
             guard !trimmedRaw.isEmpty && trimmedRaw.lowercased() != "[blank_audio]" else {
@@ -502,7 +509,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             ) {
                 Task { await SessionSyncer.shared.syncEntry(entry) }
             }
-            FloatingOverlay.shared.show(.hidden)
+            if hitLimit {
+                FloatingOverlay.shared.show(.limitReached)
+            } else {
+                FloatingOverlay.shared.show(.hidden)
+            }
         } catch let error as APIError {
             if case .weeklyLimitReached = error {
                 FloatingOverlay.shared.show(.limitReached)

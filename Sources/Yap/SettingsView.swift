@@ -21,7 +21,7 @@ struct SettingsView: View {
 
     enum Pane: String, Hashable, CaseIterable, Identifiable {
         case home, library
-        case hotkey, style, vocabulary
+        case hotkey, style
         case account, permissions
         case about
 
@@ -33,7 +33,6 @@ struct SettingsView: View {
             case .library: "Library"
             case .hotkey: "Hotkey"
             case .style: "Style"
-            case .vocabulary: "Vocabulary"
             case .account: "Account"
             case .permissions: "Permissions"
             case .about: "About"
@@ -46,7 +45,6 @@ struct SettingsView: View {
             case .library: "waveform"
             case .hotkey: "keyboard.fill"
             case .style: "sparkles"
-            case .vocabulary: "book.fill"
             case .account: "person.fill"
             case .permissions: "checkmark.shield.fill"
             case .about: "info.circle.fill"
@@ -59,7 +57,6 @@ struct SettingsView: View {
             case .library: Tile.library
             case .hotkey: Tile.hotkey
             case .style: Tile.cleanup
-            case .vocabulary: Tile.vocab
             case .account: Tile.account
             case .permissions: Tile.perms
             case .about: Tile.about
@@ -104,7 +101,6 @@ struct SettingsView: View {
             sectionHeader("Dictation")
             sidebarRow(.hotkey)
             sidebarRow(.style)
-            sidebarRow(.vocabulary)
 
             sectionHeader("Setup")
             sidebarRow(.account)
@@ -161,7 +157,6 @@ struct SettingsView: View {
                     case .library: LibraryPane()
                     case .hotkey: HotkeyPane()
                     case .style: StylePane()
-                    case .vocabulary: VocabularyPane()
                     case .account: AccountPane()
                     case .permissions: PermissionsPane()
                     case .about: AboutPane()
@@ -217,8 +212,11 @@ struct HomePane: View {
             .background(RoundedRectangle(cornerRadius: 14).fill(Color(nsColor: .controlBackgroundColor)))
             .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.primary.opacity(0.08)))
 
-            if !library.entries.isEmpty {
-                InsightsCard(entries: library.entries)
+            if !library.entries.isEmpty || auth.currentUser?.patterns != nil {
+                InsightsCard(
+                    localEntries: library.entries,
+                    serverPatterns: auth.currentUser?.patterns
+                )
             }
 
             Spacer(minLength: 0)
@@ -228,7 +226,10 @@ struct HomePane: View {
 }
 
 private struct InsightsCard: View {
-    let entries: [RecordingEntry]
+    let localEntries: [RecordingEntry]
+    let serverPatterns: ServerPatterns?
+
+    @State private var showAllDevices = true
 
     private struct AppUsage: Identifiable {
         let id = UUID()
@@ -239,26 +240,35 @@ private struct InsightsCard: View {
     }
 
     private var topApps: [AppUsage] {
-        Dictionary(grouping: entries.filter { $0.appName != nil }, by: { $0.appName! })
+        if showAllDevices, let p = serverPatterns {
+            return p.topApps.map { AppUsage(name: $0.appName, bundleID: $0.bundleID, words: $0.words, sessions: $0.sessions) }
+        }
+        return Dictionary(grouping: localEntries.filter { $0.appName != nil }, by: { $0.appName! })
             .map { name, group in
-                AppUsage(
-                    name: name,
-                    bundleID: group.first?.bundleID,
-                    words: group.reduce(0) { $0 + $1.wordCount },
-                    sessions: group.count
-                )
+                AppUsage(name: name, bundleID: group.first?.bundleID,
+                         words: group.reduce(0) { $0 + $1.wordCount }, sessions: group.count)
             }
             .sorted { $0.words > $1.words }
-            .prefix(5)
-            .map { $0 }
+            .prefix(5).map { $0 }
     }
 
     private var wordsByDay: [(label: String, words: Int, pct: Double)] {
+        if showAllDevices, let p = serverPatterns {
+            let total = Double(p.wordsByWeekday.reduce(0) { $0 + $1.words })
+            guard total > 0 else { return [] }
+            let wdMap = Dictionary(uniqueKeysWithValues: p.wordsByWeekday.map { ($0.weekday, $0.words) })
+            // Server: 0=Sun, 1=Mon…6=Sat → display Mon first
+            let order: [(Int, String)] = [(1,"Mon"),(2,"Tue"),(3,"Wed"),(4,"Thu"),(5,"Fri"),(6,"Sat"),(0,"Sun")]
+            return order.map { wd, label in
+                let words = wdMap[wd] ?? 0
+                return (label, words, Double(words) / total)
+            }
+        }
         let cal = Calendar.current
-        let byDay = Dictionary(grouping: entries, by: { cal.component(.weekday, from: $0.timestamp) })
-        let total = entries.reduce(0) { $0 + $1.wordCount }
+        let byDay = Dictionary(grouping: localEntries, by: { cal.component(.weekday, from: $0.timestamp) })
+        let total = localEntries.reduce(0) { $0 + $1.wordCount }
         guard total > 0 else { return [] }
-        // Mon(2) Tue(3) Wed(4) Thu(5) Fri(6) Sat(7) Sun(1)
+        // Cal weekday: 1=Sun, 2=Mon…7=Sat → display Mon first
         let order: [(Int, String)] = [(2,"Mon"),(3,"Tue"),(4,"Wed"),(5,"Thu"),(6,"Fri"),(7,"Sat"),(1,"Sun")]
         return order.map { wd, label in
             let words = (byDay[wd] ?? []).reduce(0) { $0 + $1.wordCount }
@@ -267,16 +277,23 @@ private struct InsightsCard: View {
     }
 
     private var topHours: [(label: String, pct: Double)] {
-        let byHour = Dictionary(grouping: entries, by: { Calendar.current.component(.hour, from: $0.timestamp) })
-        let total = entries.reduce(0) { $0 + $1.wordCount }
+        if showAllDevices, let p = serverPatterns {
+            let total = Double(p.wordsByHour.reduce(0) { $0 + $1.words })
+            guard total > 0 else { return [] }
+            return p.wordsByHour
+                .map { (hourRangeLabel($0.hour), Double($0.words) / total) }
+                .sorted { $0.1 > $1.1 }
+                .prefix(4).map { $0 }
+        }
+        let byHour = Dictionary(grouping: localEntries, by: { Calendar.current.component(.hour, from: $0.timestamp) })
+        let total = localEntries.reduce(0) { $0 + $1.wordCount }
         guard total > 0 else { return [] }
         return byHour
             .map { hour, group in
                 (hourRangeLabel(hour), Double(group.reduce(0) { $0 + $1.wordCount }) / Double(total))
             }
             .sorted { $0.1 > $1.1 }
-            .prefix(4)
-            .map { $0 }
+            .prefix(4).map { $0 }
     }
 
     private func hourRangeLabel(_ hour: Int) -> String {
@@ -296,8 +313,14 @@ private struct InsightsCard: View {
         let hasDays = days.contains(where: { $0.words > 0 })
 
         VStack(alignment: .leading, spacing: 14) {
-            Text("Your patterns")
-                .font(.body.weight(.semibold))
+            HStack(alignment: .firstTextBaseline) {
+                Text("Your patterns")
+                    .font(.body.weight(.semibold))
+                Spacer()
+                if serverPatterns != nil {
+                    DeviceToggle(showAllDevices: $showAllDevices)
+                }
+            }
 
             HStack(alignment: .top, spacing: 0) {
                 if !apps.isEmpty {
@@ -334,7 +357,7 @@ private struct InsightsCard: View {
                 .foregroundStyle(.secondary)
             ForEach(apps) { app in
                 HStack(spacing: 8) {
-                    AppIconView(bundleID: app.bundleID, size: 22)
+                    AppIconView(bundleID: app.bundleID, size: 22, appName: app.name)
                     VStack(alignment: .leading, spacing: 1) {
                         Text(app.name)
                             .font(.caption.weight(.medium))
@@ -409,6 +432,31 @@ private struct InsightsCard: View {
     }
 }
 
+private struct DeviceToggle: View {
+    @Binding var showAllDevices: Bool
+
+    var body: some View {
+        HStack(spacing: 0) {
+            pill("All devices", selected: showAllDevices) { showAllDevices = true }
+            pill("This Mac", selected: !showAllDevices) { showAllDevices = false }
+        }
+        .background(Capsule().stroke(Color.mint.opacity(0.4), lineWidth: 1))
+        .clipShape(Capsule())
+    }
+
+    private func pill(_ label: String, selected: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(label)
+                .font(.caption.weight(.medium))
+                .padding(.horizontal, 9)
+                .padding(.vertical, 3)
+                .background(selected ? Color.mint : Color.clear)
+                .foregroundStyle(selected ? Color.black : Color.secondary)
+        }
+        .buttonStyle(.plain)
+    }
+}
+
 private struct StatCell: View {
     let value: String
     let unit: String?
@@ -477,11 +525,13 @@ struct HotkeyPane: View {
 
 struct StylePane: View {
     @StateObject private var settings = Settings.shared
+    @State private var newVocabWord = ""
 
     var body: some View {
         VStack(alignment: .leading, spacing: 22) {
             languageSection
             cleanupSection
+            vocabularySection
             Spacer(minLength: 0)
         }
     }
@@ -491,8 +541,6 @@ struct StylePane: View {
     private var languageSection: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Language").font(.body.weight(.semibold))
-            Text("The language you speak. Sets spelling for English variants.")
-                .font(.callout).foregroundStyle(.secondary)
 
             Picker("Language", selection: $settings.transcriptionLanguage) {
                 ForEach(TranscriptionLanguage.all) { lang in
@@ -500,9 +548,10 @@ struct StylePane: View {
                 }
             }
             .labelsHidden()
-            .frame(maxWidth: 260)
+            .fixedSize()
         }
         .padding(18)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .background(RoundedRectangle(cornerRadius: 14).fill(Color(nsColor: .controlBackgroundColor)))
         .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.primary.opacity(0.08)))
     }
@@ -551,30 +600,105 @@ struct StylePane: View {
         .buttonStyle(.plain)
     }
 
-}
+    // MARK: Vocabulary
 
-// MARK: - Vocabulary
-
-struct VocabularyPane: View {
-    @StateObject private var settings = Settings.shared
-
-    var body: some View {
+    private var vocabularySection: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Personal dictionary").font(.body.weight(.semibold))
-            Text("Add names, jargon, and product terms — one per line or comma-separated. Passed to the transcription engine as context to bias recognition.")
-                .font(.callout)
-                .foregroundStyle(.secondary)
 
-            TextEditor(text: Binding(
-                get: { settings.customVocabulary ?? "" },
-                set: { settings.customVocabulary = $0 }
-            ))
-            .font(.body.monospaced())
-            .frame(minHeight: 240)
-            .scrollContentBackground(.hidden)
+            HStack(spacing: 8) {
+                TextField("Add a word or phrase, press Return", text: $newVocabWord)
+                    .textFieldStyle(.plain)
+                    .onSubmit { addVocabWord() }
+                if !newVocabWord.isEmpty {
+                    Button(action: addVocabWord) {
+                        Image(systemName: "return")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.05)))
+            .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.primary.opacity(0.12)))
+
+            if !settings.vocabularyWords.isEmpty {
+                FlowLayout(spacing: 6) {
+                    ForEach(settings.vocabularyWords, id: \.self) { word in
+                        HStack(spacing: 5) {
+                            Text(word)
+                                .font(.callout)
+                            Button {
+                                settings.vocabularyWords.removeAll { $0 == word }
+                            } label: {
+                                Image(systemName: "xmark")
+                                    .font(.system(size: 9, weight: .semibold))
+                                    .foregroundStyle(.secondary)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(Capsule().fill(Color.primary.opacity(0.08)))
+                    }
+                }
+            }
         }
         .padding(18)
         .background(RoundedRectangle(cornerRadius: 14).fill(Color(nsColor: .controlBackgroundColor)))
         .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.primary.opacity(0.08)))
+    }
+
+    private func addVocabWord() {
+        let word = newVocabWord.trimmingCharacters(in: .whitespaces)
+        guard !word.isEmpty, !settings.vocabularyWords.contains(word) else {
+            newVocabWord = ""
+            return
+        }
+        settings.vocabularyWords.append(word)
+        newVocabWord = ""
+    }
+}
+
+// MARK: - FlowLayout
+
+private struct FlowLayout: Layout {
+    var spacing: CGFloat = 8
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let maxWidth = proposal.width ?? .infinity
+        var height: CGFloat = 0
+        var rowWidth: CGFloat = 0
+        var rowHeight: CGFloat = 0
+        for subview in subviews {
+            let size = subview.sizeThatFits(.unspecified)
+            if rowWidth + size.width > maxWidth && rowWidth > 0 {
+                height += rowHeight + spacing
+                rowWidth = 0
+                rowHeight = 0
+            }
+            rowWidth += size.width + spacing
+            rowHeight = max(rowHeight, size.height)
+        }
+        return CGSize(width: maxWidth, height: height + rowHeight)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        var x = bounds.minX
+        var y = bounds.minY
+        var rowHeight: CGFloat = 0
+        for subview in subviews {
+            let size = subview.sizeThatFits(.unspecified)
+            if x + size.width > bounds.maxX && x > bounds.minX {
+                y += rowHeight + spacing
+                x = bounds.minX
+                rowHeight = 0
+            }
+            subview.place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(size))
+            x += size.width + spacing
+            rowHeight = max(rowHeight, size.height)
+        }
     }
 }

@@ -383,10 +383,8 @@ private struct LimitReachedCard: View {
     }
 
     private var subtitle: String {
-        guard let user = auth.currentUser else { return "Free plan: 2,000 words/week." }
-        let limit = user.weekLimit ?? 2000
-        let reset = resetText(from: user.weekStart)
-        return "Used \(user.weekWords.formatted()) of \(limit.formatted()) words. \(reset)"
+        guard let user = auth.currentUser else { return "Resets weekly." }
+        return resetText(from: user.weekStart)
     }
 
     private func resetText(from weekStart: String) -> String {

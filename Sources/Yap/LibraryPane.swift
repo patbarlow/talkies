@@ -148,13 +148,9 @@ private struct EntryRow: View {
                     Text("\(entry.wordCount) word\(entry.wordCount == 1 ? "" : "s")")
                     if let app = entry.appName {
                         Text("·")
-                        AppIconView(bundleID: entry.bundleID, size: 13)
+                        AppIconView(bundleID: entry.bundleID, size: 13, appName: entry.appName)
                         Text(app)
                     }
-                    Text("·")
-                    Image(systemName: "laptopcomputer")
-                        .font(.system(size: 10))
-                    Text(entry.deviceName ?? "This Mac")
                 }
                 .font(.caption)
                 .foregroundStyle(.secondary)

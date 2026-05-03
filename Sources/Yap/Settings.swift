@@ -118,8 +118,12 @@ final class Settings: ObservableObject {
     @Published var transcriptionLanguage: TranscriptionLanguage {
         didSet { UserDefaults.standard.set(transcriptionLanguage.displayName, forKey: "transcriptionLanguage") }
     }
-    @Published var customVocabulary: String? {
-        didSet { UserDefaults.standard.set(customVocabulary, forKey: "customVocabulary") }
+    @Published var vocabularyWords: [String] {
+        didSet { UserDefaults.standard.set(vocabularyWords, forKey: "vocabularyWords") }
+    }
+
+    var customVocabulary: String? {
+        vocabularyWords.isEmpty ? nil : vocabularyWords.joined(separator: ", ")
     }
     @Published var hotkey: HotkeySpec {
         didSet {
@@ -149,7 +153,15 @@ final class Settings: ObservableObject {
         } else {
             self.transcriptionLanguage = .default
         }
-        self.customVocabulary = UserDefaults.standard.string(forKey: "customVocabulary")
+        let savedWords = UserDefaults.standard.stringArray(forKey: "vocabularyWords") ?? []
+        if savedWords.isEmpty, let legacy = UserDefaults.standard.string(forKey: "customVocabulary"), !legacy.isEmpty {
+            self.vocabularyWords = legacy
+                .components(separatedBy: CharacterSet(charactersIn: ",\n"))
+                .map { $0.trimmingCharacters(in: .whitespaces) }
+                .filter { !$0.isEmpty }
+        } else {
+            self.vocabularyWords = savedWords
+        }
 
         if let data = UserDefaults.standard.data(forKey: "hotkey"),
            let spec = try? JSONDecoder().decode(HotkeySpec.self, from: data) {

@@ -1,13 +1,18 @@
 import { Hono } from "hono";
 import type { Env } from "../env";
 import { requireAuth, type AuthVariables } from "../middleware/auth";
-import { publicUser } from "../db";
+import { publicUser, getPatterns } from "../db";
 
 const app = new Hono<{ Bindings: Env; Variables: AuthVariables }>();
 
 app.use("*", requireAuth);
 
-app.get("/", (c) => c.json(publicUser(c.get("user"))));
+app.get("/", async (c) => {
+  const user = c.get("user");
+  const tzOffset = parseInt(c.req.query("tz") ?? "0", 10);
+  const patterns = await getPatterns(c.env.DB, user.id, isNaN(tzOffset) ? 0 : tzOffset);
+  return c.json(publicUser(user, patterns));
+});
 
 /**
  * Update the signed-in user's profile.

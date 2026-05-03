@@ -61,7 +61,10 @@ app.post("/", async (c) => {
   // so we don't update them here. The client syncs the session immediately after
   // transcription, keeping the server totals accurate without double-counting.
 
-  return c.json({ text, wordCount });
+  const limitReached =
+    user.plan === "free" && user.week_words + wordCount >= WEEK_LIMIT_FREE;
+
+  return c.json({ text, wordCount, limitReached });
 });
 
 export default app;
