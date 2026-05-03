@@ -9,6 +9,8 @@ final class AudioLevels: ObservableObject {
 
     /// Fixed-size ring of recent levels, mapped to [0, 1]. Oldest → newest.
     @Published private(set) var bars: [CGFloat]
+    /// Peak level seen since the last reset. Used for silence detection.
+    private(set) var peakLevel: CGFloat = 0
 
     private let barCount: Int
 
@@ -29,6 +31,7 @@ final class AudioLevels: ObservableObject {
 
     func reset() {
         bars = Array(repeating: 0.08, count: barCount)
+        peakLevel = 0
     }
 
     private func push(_ value: CGFloat) {
@@ -36,5 +39,6 @@ final class AudioLevels: ObservableObject {
         next.removeFirst()
         next.append(value)
         bars = next
+        if value > peakLevel { peakLevel = value }
     }
 }

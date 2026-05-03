@@ -19,6 +19,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var retryTimer: Timer?
     private var recordingStartedAt: Date?
     private var pendingSyncDone = false
+    private var silenceTask: Task<Void, Never>?
 
     // Sparkle — auto-update controller. `startingUpdater: true` runs periodic
     // background checks per SUScheduledCheckInterval in Info.plist.
@@ -314,6 +315,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func cancelRecording() {
         guard isRecording else { return }
+        silenceTask?.cancel()
+        silenceTask = nil
         isRecording = false
         recordingStartedAt = nil
         setIdleIcon()
@@ -329,13 +332,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             isRecording = true
             setRecordingIcon()
             FloatingOverlay.shared.show(.recording)
+            startSilenceDetection()
         } catch {
             NSLog("Yap record error: \(error)")
         }
     }
 
+    private func startSilenceDetection() {
+        silenceTask?.cancel()
+        silenceTask = Task { @MainActor [weak self] in
+            do { try await Task.sleep(nanoseconds: 5_000_000_000) } catch { return }
+            guard let self, self.isRecording else { return }
+            guard AudioLevels.shared.peakLevel < 0.1 else { return }
+            FloatingOverlay.shared.show(.warning("Nothing detected"))
+            // If audio picks up after the warning, clear back to recording state.
+            while self.isRecording {
+                do { try await Task.sleep(nanoseconds: 300_000_000) } catch { return }
+                guard self.isRecording else { return }
+                if AudioLevels.shared.peakLevel >= 0.1 {
+                    FloatingOverlay.shared.show(.recording)
+                    return
+                }
+            }
+        }
+    }
+
     private func stopAndProcess() async {
         guard isRecording else { return }
+        silenceTask?.cancel()
+        silenceTask = nil
         isRecording = false
         setIdleIcon()
         let duration = recordingStartedAt.map { Date().timeIntervalSince($0) } ?? 0
