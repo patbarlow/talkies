@@ -358,7 +358,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let trimmedRaw = raw.trimmingCharacters(in: .whitespacesAndNewlines)
             // Whisper returns "[BLANK_AUDIO]" (or lowercase variant) for silent recordings.
             guard !trimmedRaw.isEmpty && trimmedRaw.lowercased() != "[blank_audio]" else {
-                FloatingOverlay.shared.show(.hidden)
+                FloatingOverlay.shared.show(.warning("Nothing detected"))
                 return
             }
             let wordCount = trimmedRaw.split(whereSeparator: \.isWhitespace).count

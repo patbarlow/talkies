@@ -4,7 +4,7 @@ import SwiftUI
 
 @MainActor
 final class OverlayViewModel: ObservableObject {
-    enum Mode: Equatable { case hidden, recording, processing }
+    enum Mode: Equatable { case hidden, recording, processing, warning(String) }
     @Published var mode: Mode = .hidden
 }
 
@@ -17,10 +17,13 @@ final class FloatingOverlay {
 
     private let viewModel = OverlayViewModel()
     private var panel: NSPanel?
+    private var dismissTask: Task<Void, Never>?
 
     private init() {}
 
     func show(_ mode: OverlayViewModel.Mode) {
+        dismissTask?.cancel()
+        dismissTask = nil
         ensurePanel()
         viewModel.mode = mode
         guard let panel else { return }
@@ -46,6 +49,13 @@ final class FloatingOverlay {
         }
         // Re-trace the shadow outline after the pill shape changes.
         panel.invalidateShadow()
+
+        if case .warning = mode {
+            dismissTask = Task { @MainActor [weak self] in
+                do { try await Task.sleep(nanoseconds: 2_000_000_000) } catch { return }
+                self?.show(.hidden)
+            }
+        }
     }
 
     private func ensurePanel() {
@@ -113,6 +123,9 @@ private struct OverlayRoot: View {
             case .processing:
                 ProcessingPill()
                     .transition(.scale(scale: 0.85).combined(with: .opacity))
+            case .warning(let message):
+                WarningPill(message: message)
+                    .transition(.scale(scale: 0.85).combined(with: .opacity))
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -143,6 +156,24 @@ private struct RecordingPill: View {
         .onReceive(idleTimer) { _ in
             idlePhase += 0.06
         }
+    }
+}
+
+private struct WarningPill: View {
+    let message: String
+
+    var body: some View {
+        HStack(spacing: 7) {
+            Image(systemName: "mic.slash")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundColor(.white.opacity(0.7))
+            Text(message)
+                .font(.system(size: 13, weight: .medium))
+                .foregroundColor(.white)
+        }
+        .padding(.horizontal, 18)
+        .padding(.vertical, 12)
+        .background(Capsule().fill(Color.black.opacity(0.92)))
     }
 }
 
