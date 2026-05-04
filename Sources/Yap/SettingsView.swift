@@ -219,7 +219,6 @@ struct HomePane: View {
 
             Spacer(minLength: 0)
         }
-        .task { await auth.refresh() }
     }
 }
 
