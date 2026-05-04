@@ -84,6 +84,7 @@ app.post("/webhook", async (c) => {
         status: string;
       };
       const plan = sub.status === "active" || sub.status === "trialing" ? "pro" : "free";
+      await ensureStripeCustomerLinked(c.env.DB, c.env.STRIPE_SECRET_KEY, sub.customer);
       const preUpdate = await c.env.DB
         .prepare("SELECT email, plan FROM users WHERE stripe_customer_id = ?")
         .bind(sub.customer)
@@ -96,6 +97,7 @@ app.post("/webhook", async (c) => {
     }
     case "customer.subscription.deleted": {
       const sub = event.data.object as { customer: string };
+      await ensureStripeCustomerLinked(c.env.DB, c.env.STRIPE_SECRET_KEY, sub.customer);
       const preUpdate = await c.env.DB
         .prepare("SELECT email FROM users WHERE stripe_customer_id = ?")
         .bind(sub.customer)
@@ -108,6 +110,35 @@ app.post("/webhook", async (c) => {
 
   return c.json({ received: true });
 });
+
+/**
+ * If no user row has stripe_customer_id = customerId, fetch the customer's
+ * email from Stripe and set it on the matching user row. This handles the
+ * race where the webhook fires before setStripeCustomerId completes.
+ */
+async function ensureStripeCustomerLinked(
+  db: D1Database,
+  secretKey: string,
+  customerId: string,
+): Promise<void> {
+  const existing = await db
+    .prepare("SELECT id FROM users WHERE stripe_customer_id = ?")
+    .bind(customerId)
+    .first<{ id: string }>();
+  if (existing) return;
+
+  const res = await fetch(`https://api.stripe.com/v1/customers/${customerId}`, {
+    headers: { Authorization: `Bearer ${secretKey}` },
+  });
+  if (!res.ok) return;
+  const customer = (await res.json()) as { email?: string };
+  if (!customer.email) return;
+
+  await db
+    .prepare("UPDATE users SET stripe_customer_id = ?, updated_at = ? WHERE email = ? AND stripe_customer_id IS NULL")
+    .bind(customerId, new Date().toISOString(), customer.email)
+    .run();
+}
 
 /**
  * Returns an existing Stripe customer for the given email (across all products

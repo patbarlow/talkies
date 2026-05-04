@@ -198,8 +198,6 @@ struct HomePane: View {
             Text(greetingText)
                 .font(.largeTitle.bold())
 
-            // Prefer server totals (cross-device, source of truth); fall back to local
-            // while the user object is loading or if offline.
             let weekWords  = auth.currentUser?.weekWords  ?? stats.weekWords
             let totalWords = auth.currentUser?.totalWords ?? stats.totalWords
 
