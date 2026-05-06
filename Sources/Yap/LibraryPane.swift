@@ -91,7 +91,7 @@ struct LibraryPane: View {
                 .foregroundStyle(.secondary.opacity(0.6))
             Text("No recordings yet")
                 .font(.body.weight(.medium))
-            Text("Hold \(Settings.shared.hotkey.label) and speak to make your first recording.")
+            Text("Hold \(Settings.shared.hotkey?.label ?? "your shortcut") and speak to make your first recording.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)

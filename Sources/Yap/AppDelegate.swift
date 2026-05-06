@@ -12,6 +12,7 @@ private final class SettingsHostingView: NSHostingView<SettingsView> {
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
     private var hotkey: Hotkey?
+    private var editHotkey: Hotkey?
     private let recorder = Recorder()
     private var isRecording = false
     private var settingsWindow: NSWindow?
@@ -49,16 +50,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             andEventID: 0x4755524C
         )
 
-        // Hotkey spec rebinding
+        // Hotkey spec rebinding (nil = "No shortcut" — uninstall)
         NotificationCenter.default.addObserver(
             forName: .yapHotkeyChanged,
             object: nil,
             queue: .main
         ) { [weak self] note in
-            guard let spec = note.object as? HotkeySpec else { return }
             MainActor.assumeIsolated {
-                self?.hotkey?.update(spec: spec)
+                let spec = note.object as? HotkeySpec
+                self?.applyDictateHotkey(spec: spec)
                 self?.refreshStatus()
+            }
+        }
+
+        // Edit hotkey changed — install/uninstall/update.
+        NotificationCenter.default.addObserver(
+            forName: .yapEditHotkeyChanged,
+            object: nil,
+            queue: .main
+        ) { [weak self] note in
+            MainActor.assumeIsolated {
+                let spec = note.object as? HotkeySpec
+                self?.applyEditHotkey(spec: spec)
             }
         }
 
@@ -120,7 +133,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            MainActor.assumeIsolated { self?.hotkey?.uninstall() }
+            MainActor.assumeIsolated {
+                self?.hotkey?.uninstall()
+                self?.editHotkey?.uninstall()
+            }
         }
 
         NotificationCenter.default.addObserver(
@@ -130,6 +146,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         ) { [weak self] _ in
             MainActor.assumeIsolated {
                 if let hk = self?.hotkey, !hk.isInstalled { _ = hk.install() }
+                if let hk = self?.editHotkey, !hk.isInstalled { _ = hk.install() }
             }
         }
 
@@ -174,6 +191,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard isAuthed else {
             hotkey?.uninstall()
             hotkey = nil
+            editHotkey?.uninstall()
+            editHotkey = nil
             retryTimer?.invalidate()
             retryTimer = nil
             let onboardingVisible = onboardingWindow?.isVisible ?? false
@@ -376,27 +395,76 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func installHotkey() {
-        let hk = hotkey ?? Hotkey(spec: Settings.shared.hotkey)
+        applyDictateHotkey(spec: Settings.shared.hotkey)
+        applyEditHotkey(spec: Settings.shared.editHotkey)
+    }
+
+    /// Install / update / uninstall the primary dictation hotkey.
+    private func applyDictateHotkey(spec: HotkeySpec?) {
+        guard let spec else {
+            hotkey?.uninstall()
+            hotkey = nil
+            retryTimer?.invalidate()
+            retryTimer = nil
+            return
+        }
+        if let existing = hotkey {
+            existing.update(spec: spec)
+            return
+        }
+        let hk = Hotkey(spec: spec)
         hk.onPress = { [weak self] in
             NSLog("Yap: hotkey pressed")
+            if EditModeController.shared.tryHandlePress(kind: .dictate) { return }
             self?.startRecording()
         }
         hk.onRelease = { [weak self] in
             NSLog("Yap: hotkey released")
+            if EditModeController.shared.tryHandleRelease() { return }
             Task { await self?.stopAndProcess() }
         }
         hk.onCancel = { [weak self] in
             NSLog("Yap: hotkey cancelled (other key pressed)")
+            if EditModeController.shared.tryHandleCancel() { return }
             self?.cancelRecording()
         }
         hotkey = hk
-
         if hk.install() {
             retryTimer?.invalidate()
             retryTimer = nil
         } else {
             scheduleRetry()
         }
+    }
+
+    /// Install / update / uninstall the optional second hotkey for clipboard
+    /// edit mode. Called on initial install and whenever Settings.editHotkey
+    /// changes.
+    private func applyEditHotkey(spec: HotkeySpec?) {
+        guard let spec else {
+            editHotkey?.uninstall()
+            editHotkey = nil
+            return
+        }
+        if let existing = editHotkey {
+            existing.update(spec: spec)
+            return
+        }
+        let hk = Hotkey(spec: spec)
+        hk.onPress = {
+            NSLog("Yap: edit hotkey pressed")
+            _ = EditModeController.shared.tryHandlePress(kind: .edit)
+        }
+        hk.onRelease = {
+            NSLog("Yap: edit hotkey released")
+            _ = EditModeController.shared.tryHandleRelease()
+        }
+        hk.onCancel = {
+            NSLog("Yap: edit hotkey cancelled (other key pressed)")
+            _ = EditModeController.shared.tryHandleCancel()
+        }
+        _ = hk.install()
+        editHotkey = hk
     }
 
     private func scheduleRetry() {
@@ -453,6 +521,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let duration = recordingStartedAt.map { Date().timeIntervalSince($0) } ?? 0
         recordingStartedAt = nil
 
+        let peak = AudioLevels.shared.peakLevel
         guard let url = recorder.stop() else {
             FloatingOverlay.shared.show(.hidden)
             return
@@ -460,6 +529,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         defer { try? FileManager.default.removeItem(at: url) }
 
         guard duration >= 0.5 else {
+            FloatingOverlay.shared.show(.hidden)
+            return
+        }
+
+        // Silence gate. If the loudest moment of the recording was below the
+        // noise-floor threshold, treat it as silent — Whisper hallucinates
+        // captions like "Thank you." on near-silent audio, and the cleanup
+        // pass then turns those into chat-style replies that get pasted.
+        guard peak >= 0.15 else {
+            NSLog("Yap: skipping transcription — peak audio level \(peak) below threshold")
             FloatingOverlay.shared.show(.hidden)
             return
         }
@@ -544,7 +623,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard AuthStore.shared.isSignedIn else { return }
             let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
             let summary = components?.queryItems?.first(where: { $0.name == "summary" })?.value ?? ""
-            let hotkeyLabel = Settings.shared.hotkey.label
+            let hotkeyLabel = Settings.shared.hotkey?.label ?? "your shortcut"
             pendingAutoSubmit = components?.queryItems?.first(where: { $0.name == "autosubmit" })?.value == "1"
             FloatingOverlay.shared.show(.review(summary: summary, hotkeyLabel: hotkeyLabel))
         case "dismiss":

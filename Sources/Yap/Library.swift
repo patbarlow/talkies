@@ -74,6 +74,15 @@ final class Library: ObservableObject {
         return entry
     }
 
+    /// Most recent entry whose timestamp is within `window`. Used by edit
+    /// mode as a fallback when the user presses the edit hotkey with nothing
+    /// selected — they probably want to refine what they just dictated.
+    func mostRecentEntry(within window: TimeInterval) -> RecordingEntry? {
+        guard let first = entries.first else { return nil }
+        guard Date().timeIntervalSince(first.timestamp) <= window else { return nil }
+        return first
+    }
+
     func markSynced(ids: [UUID]) {
         let idSet = Set(ids)
         let now = Date()

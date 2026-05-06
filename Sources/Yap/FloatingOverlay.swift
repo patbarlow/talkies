@@ -9,6 +9,10 @@ final class OverlayViewModel: ObservableObject {
         case hidden, recording, processing
         case review(summary: String, hotkeyLabel: String)
         case limitReached
+        case editRecording(selection: String, prompt: String)
+        case editProcessing(selection: String, prompt: String)
+        case editPreview(original: String, draft: String, hotkeyLabel: String)
+        case editToast(message: String)
     }
     @Published var mode: Mode = .hidden
 }
@@ -52,7 +56,7 @@ final class FloatingOverlay {
         // isMovableByWindowBackground must stay false — true causes the window to consume
         // mouseDown events before SwiftUI tap gestures can fire on the text input area.
         switch mode {
-        case .review, .limitReached:
+        case .review, .limitReached, .editRecording, .editProcessing, .editPreview, .editToast:
             panel.ignoresMouseEvents = false
         default:
             panel.ignoresMouseEvents = true
@@ -83,6 +87,15 @@ final class FloatingOverlay {
                 guard !Task.isCancelled else { return }
                 self?.show(.hidden)
             }
+        case .editToast:
+            reviewDismissTask = Task { [weak self] in
+                try? await Task.sleep(nanoseconds: 5_000_000_000)
+                guard !Task.isCancelled else { return }
+                self?.show(.hidden)
+            }
+        case .editRecording, .editPreview:
+            // Make the panel key so SwiftUI .keyboardShortcut handlers (esc/return) fire.
+            panel.makeKeyAndOrderFront(nil)
         default:
             break
         }
@@ -96,6 +109,12 @@ final class FloatingOverlay {
             return NSSize(width: 380, height: 158)
         case .limitReached:
             return NSSize(width: 320, height: 120)
+        case .editRecording, .editProcessing:
+            return NSSize(width: 380, height: 132)
+        case .editPreview:
+            return NSSize(width: 560, height: 380)
+        case .editToast:
+            return NSSize(width: 320, height: 64)
         }
     }
 
@@ -164,6 +183,18 @@ private struct OverlayRoot: View {
                     .transition(.scale(scale: 0.92).combined(with: .opacity))
             case .limitReached:
                 LimitReachedCard()
+                    .transition(.scale(scale: 0.92).combined(with: .opacity))
+            case .editRecording(let selection, let prompt):
+                EditPromptCard(selection: selection, phase: .recording, prompt: prompt)
+                    .transition(.scale(scale: 0.92).combined(with: .opacity))
+            case .editProcessing(let selection, let prompt):
+                EditPromptCard(selection: selection, phase: .processing, prompt: prompt)
+                    .transition(.opacity)
+            case .editPreview(let original, let draft, let hotkeyLabel):
+                EditPreviewCard(original: original, draft: draft, hotkeyLabel: hotkeyLabel)
+                    .transition(.scale(scale: 0.92).combined(with: .opacity))
+            case .editToast(let message):
+                EditToastCard(message: message)
                     .transition(.scale(scale: 0.92).combined(with: .opacity))
             }
         }
@@ -399,5 +430,204 @@ private struct LimitReachedCard: View {
         let df = DateFormatter()
         df.dateFormat = "EEE h:mm a"
         return "Resets \(df.string(from: nextReset))."
+    }
+}
+
+// MARK: - Edit-mode cards
+
+private struct EditPromptCard: View {
+    enum Phase { case recording, processing }
+
+    let selection: String
+    let phase: Phase
+    let prompt: String
+
+    @StateObject private var levels = AudioLevels.shared
+    @State private var idlePhase: Double = 0
+    @State private var dotPhase = 0
+    private let idleTimer = Timer.publish(every: 0.05, on: .main, in: .common).autoconnect()
+    private let dotTimer = Timer.publish(every: 0.3, on: .main, in: .common).autoconnect()
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top, spacing: 8) {
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "pencil.and.outline")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(.mint)
+                        Text(prompt)
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(.white)
+                    }
+                    Text(selectionPreview)
+                        .font(.system(size: 11))
+                        .foregroundStyle(.white.opacity(0.45))
+                        .lineLimit(2)
+                        .truncationMode(.tail)
+                }
+                Spacer(minLength: 8)
+                Button {
+                    EditModeController.shared.cancel(reason: .userClosed)
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.4))
+                        .frame(width: 20, height: 20)
+                }
+                .buttonStyle(.plain)
+                .keyboardShortcut(.escape, modifiers: [])
+            }
+
+            indicator
+                .frame(maxWidth: .infinity)
+                .frame(height: 36)
+        }
+        .padding(.horizontal, 18)
+        .padding(.vertical, 16)
+        .frame(width: 380, height: 132)
+        .background(
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .fill(Color.black.opacity(0.92))
+        )
+    }
+
+    private var selectionPreview: String {
+        let collapsed = selection
+            .replacingOccurrences(of: "\n", with: " ")
+            .trimmingCharacters(in: .whitespaces)
+        if collapsed.count <= 120 { return collapsed }
+        return String(collapsed.prefix(117)) + "…"
+    }
+
+    @ViewBuilder
+    private var indicator: some View {
+        switch phase {
+        case .recording:
+            HStack(spacing: 3) {
+                ForEach(levels.bars.indices, id: \.self) { i in
+                    let level = Double(levels.bars[i])
+                    let idle = sin(idlePhase + Double(i) * 1.2) * 3 + 5
+                    Capsule()
+                        .fill(Color.white)
+                        .frame(width: 3, height: idle + level * 22)
+                        .animation(.easeOut(duration: 0.08), value: level)
+                }
+            }
+            .onReceive(idleTimer) { _ in
+                idlePhase += 0.06
+            }
+        case .processing:
+            HStack(spacing: 5) {
+                ForEach(0..<3, id: \.self) { i in
+                    Circle()
+                        .fill(Color.white.opacity(dotPhase == i ? 1.0 : 0.3))
+                        .frame(width: 6, height: 6)
+                }
+            }
+            .onReceive(dotTimer) { _ in
+                withAnimation(.easeInOut(duration: 0.25)) {
+                    dotPhase = (dotPhase + 1) % 3
+                }
+            }
+        }
+    }
+}
+
+private struct EditPreviewCard: View {
+    let original: String
+    let draft: String
+    let hotkeyLabel: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top, spacing: 8) {
+                HStack(spacing: 6) {
+                    Image(systemName: "sparkles")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(.mint)
+                    Text("Preview")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(.white)
+                }
+                Spacer()
+                Button {
+                    EditModeController.shared.cancel(reason: .userClosed)
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.4))
+                        .frame(width: 20, height: 20)
+                }
+                .buttonStyle(.plain)
+                .keyboardShortcut(.escape, modifiers: [])
+            }
+
+            ScrollView {
+                Text(draft)
+                    .font(.system(size: 14))
+                    .foregroundStyle(.white)
+                    .lineSpacing(3)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .textSelection(.enabled)
+            }
+            .frame(maxHeight: .infinity)
+
+            HStack(spacing: 8) {
+                Button {
+                    EditModeController.shared.confirm()
+                } label: {
+                    HStack(spacing: 4) {
+                        Text("Apply")
+                            .font(.system(size: 13, weight: .semibold))
+                        Image(systemName: "return")
+                            .font(.system(size: 11, weight: .semibold))
+                    }
+                    .foregroundStyle(.black)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 6)
+                    .background(Capsule().fill(Color.mint))
+                }
+                .buttonStyle(.plain)
+                .keyboardShortcut(.return, modifiers: [])
+
+                Text("Hold \(hotkeyLabel) to refine")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.white.opacity(0.45))
+
+                Spacer()
+            }
+        }
+        .padding(.horizontal, 22)
+        .padding(.vertical, 18)
+        .frame(width: 560, height: 380)
+        .background(
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .fill(Color.black.opacity(0.92))
+        )
+    }
+}
+
+private struct EditToastCard: View {
+    let message: String
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 10) {
+            Image(systemName: "doc.on.clipboard")
+                .font(.system(size: 14, weight: .medium))
+                .foregroundStyle(.mint)
+            Text(message)
+                .font(.system(size: 12))
+                .foregroundStyle(.white)
+                .lineLimit(2)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .frame(width: 320, height: 64)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(Color.black.opacity(0.92))
+        )
     }
 }

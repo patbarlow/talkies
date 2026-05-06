@@ -54,7 +54,8 @@ app.post("/", async (c) => {
   }
 
   const result = (await groqRes.json()) as { text?: string };
-  const text = (result.text ?? "").trim();
+  const rawText = (result.text ?? "").trim();
+  const text = isWhisperHallucination(rawText) ? "" : rawText;
   const wordCount = text.split(/\s+/).filter(Boolean).length;
 
   // Word counts are maintained by the /sessions sync endpoint (recomputeUserStats)
@@ -66,5 +67,51 @@ app.post("/", async (c) => {
 
   return c.json({ text, wordCount, limitReached });
 });
+
+/**
+ * Whisper consistently emits these strings on silent or near-silent audio
+ * (training-set artifacts from auto-captioned YouTube). They must be filtered
+ * here so downstream cleanup (Claude) doesn't misread them as user input and
+ * respond conversationally.
+ *
+ * Match is exact, case-insensitive, after trimming and stripping outer
+ * punctuation/whitespace. We deliberately don't fuzzy-match — a real
+ * dictation of the word "thanks" should still go through.
+ */
+const WHISPER_HALLUCINATIONS: ReadonlySet<string> = new Set([
+  "",
+  "[blank_audio]",
+  "[ blank_audio ]",
+  "[music]",
+  "[applause]",
+  "[silence]",
+  "(music)",
+  "(applause)",
+  "(silence)",
+  "thank you",
+  "thanks",
+  "thank you for watching",
+  "thank you for watching!",
+  "thanks for watching",
+  "thanks for watching!",
+  "thank you so much for watching",
+  "you",
+  "bye",
+  "goodbye",
+  "the end",
+  "...",
+  "♪",
+  "♫",
+  "♪♪",
+  "♪ ♪",
+]);
+
+function isWhisperHallucination(text: string): boolean {
+  const normalized = text
+    .toLowerCase()
+    .replace(/[.,!?]+$/g, "")
+    .trim();
+  return WHISPER_HALLUCINATIONS.has(normalized);
+}
 
 export default app;

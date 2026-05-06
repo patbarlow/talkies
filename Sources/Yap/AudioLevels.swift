@@ -9,6 +9,10 @@ final class AudioLevels: ObservableObject {
 
     /// Fixed-size ring of recent levels, mapped to [0, 1]. Oldest → newest.
     @Published private(set) var bars: [CGFloat]
+    /// Highest level seen since `resetForRecording`. Used by the dictation
+    /// pipeline to gate out silent recordings (where Whisper would otherwise
+    /// hallucinate "Thank you." or similar) before they hit the API.
+    private(set) var peakLevel: CGFloat = 0
 
     private let barCount: Int
 
@@ -27,8 +31,17 @@ final class AudioLevels: ObservableObject {
         }
     }
 
+    /// Clears the visual bars only. Called when the visual pill goes away;
+    /// preserves peakLevel so the pipeline can still gate on silence after
+    /// stop().
     func reset() {
         bars = Array(repeating: 0.08, count: barCount)
+    }
+
+    /// Clears bars *and* peak. Call at the start of each recording.
+    func resetForRecording() {
+        bars = Array(repeating: 0.08, count: barCount)
+        peakLevel = 0
     }
 
     private func push(_ value: CGFloat) {
@@ -36,5 +49,6 @@ final class AudioLevels: ObservableObject {
         next.removeFirst()
         next.append(value)
         bars = next
+        if value > peakLevel { peakLevel = value }
     }
 }

@@ -192,6 +192,48 @@ final class APIClient {
         }
     }
 
+    /// Returns a Stripe Customer Portal URL for the current user. The client
+    /// opens it in a browser to manage billing or cancel.
+    func stripePortal(session: String) async throws -> URL {
+        let (data, status) = try await post(path: "/v1/stripe/portal", body: Data(), session: session)
+        if status == 401 { throw APIError.invalidSession }
+        guard status == 200 else {
+            throw APIError.http(status, String(data: data, encoding: .utf8) ?? "")
+        }
+        do {
+            let decoded = try JSONDecoder().decode(CheckoutResponse.self, from: data)
+            guard let url = URL(string: decoded.url) else {
+                throw APIError.decoding(NSError(domain: "yap", code: 0))
+            }
+            return url
+        } catch {
+            throw APIError.decoding(error)
+        }
+    }
+
+    struct SubscriptionInfo: Decodable, Equatable {
+        let status: String
+        let cancelAtPeriodEnd: Bool
+        let currentPeriodEnd: Int?
+        let amountCents: Int?
+        let currency: String?
+        let interval: String?
+    }
+    private struct SubscriptionResponse: Decodable { let subscription: SubscriptionInfo? }
+
+    func stripeSubscription(session: String) async throws -> SubscriptionInfo? {
+        let (data, status) = try await get(path: "/v1/stripe/subscription", session: session)
+        if status == 401 { throw APIError.invalidSession }
+        guard status == 200 else {
+            throw APIError.http(status, String(data: data, encoding: .utf8) ?? "")
+        }
+        do {
+            return try JSONDecoder().decode(SubscriptionResponse.self, from: data).subscription
+        } catch {
+            throw APIError.decoding(error)
+        }
+    }
+
     // MARK: - Transcribe
 
     struct TranscribeResponse: Decodable {
@@ -275,6 +317,75 @@ final class APIClient {
         }
         do {
             return try JSONDecoder().decode(CleanupResponse.self, from: data).text
+        } catch {
+            throw APIError.decoding(error)
+        }
+    }
+
+    // MARK: - Edit
+
+    struct EditResponse: Decodable { let text: String }
+
+    /// One revision in the edit-mode history. Lets refinements use earlier
+    /// instructions/outputs as context without compounding edits on edits.
+    struct EditHistoryEntry: Encodable {
+        let instruction: String
+        let output: String
+    }
+
+    func edit(
+        selection: String,
+        instruction: String,
+        appName: String?,
+        spellingVariant: String?,
+        preferences: [String],
+        history: [EditHistoryEntry],
+        session: String
+    ) async throws -> String {
+        struct Payload: Encodable {
+            let selection: String
+            let instruction: String
+            let appName: String?
+            let spellingVariant: String?
+            let preferences: [String]
+            let history: [EditHistoryEntry]
+        }
+        let payload = Payload(
+            selection: selection,
+            instruction: instruction,
+            appName: appName,
+            spellingVariant: spellingVariant,
+            preferences: preferences,
+            history: history
+        )
+        let body = try JSONEncoder().encode(payload)
+
+        let (data, status) = try await post(path: "/v1/edit", body: body, session: session)
+        if status == 401 { throw APIError.invalidSession }
+        guard status == 200 else {
+            throw APIError.http(status, String(data: data, encoding: .utf8) ?? "")
+        }
+        do {
+            return try JSONDecoder().decode(EditResponse.self, from: data).text
+        } catch {
+            throw APIError.decoding(error)
+        }
+    }
+
+    // MARK: - Preferences
+
+    struct ExtractPreferencesResponse: Decodable { let preferences: [String] }
+
+    func extractPreferences(text: String, session: String) async throws -> [String] {
+        let payload: [String: String] = ["text": text]
+        let body = try JSONSerialization.data(withJSONObject: payload)
+        let (data, status) = try await post(path: "/v1/preferences/extract", body: body, session: session)
+        if status == 401 { throw APIError.invalidSession }
+        guard status == 200 else {
+            throw APIError.http(status, String(data: data, encoding: .utf8) ?? "")
+        }
+        do {
+            return try JSONDecoder().decode(ExtractPreferencesResponse.self, from: data).preferences
         } catch {
             throw APIError.decoding(error)
         }
