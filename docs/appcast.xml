@@ -141,6 +141,14 @@
             <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
             <enclosure url="https://github.com/patbarlow/talkies/releases/download/v1.1.1/Yap-1.1.1.zip" sparkle:edSignature="ZZex8vW1FwDG4BzoGGLq1jCsNWWQSRxfpfW62SikCG06SRhEKS3ehkSKHIqbgjWfzJYbjLK6HwVxrq6swmx6Dg==" length="2153730" type="application/octet-stream" />
         </item>
+        <item>
+            <title>Version 1.2.1</title>
+            <pubDate>Mon, 18 May 2026 23:00:00 +0000</pubDate>
+            <sparkle:version>102</sparkle:version>
+            <sparkle:shortVersionString>1.2.1</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <enclosure url="https://github.com/patbarlow/talkies/releases/download/v1.2.1/Yap-1.2.1.zip" sparkle:edSignature="LrSlZ2CC/yoNNm0JgOlFCfLYNJce4DzyEGMbUymFg4TZpEk5R7NeSrdj0D+QSLw1CRi8qjEZOaCLqlJfWIFbAQ==" length="2289929" type="application/octet-stream" />
+        </item>
         <!-- RELEASES_INSERT_HERE -->
     </channel>
 </rss>
