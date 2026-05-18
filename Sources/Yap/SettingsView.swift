@@ -23,7 +23,7 @@ struct SettingsView: View {
         case home, library
         case hotkey, style
         case account, permissions
-        case about
+        case about, feedback
 
         var id: String { rawValue }
 
@@ -36,6 +36,7 @@ struct SettingsView: View {
             case .account: "Account"
             case .permissions: "Permissions"
             case .about: "About"
+            case .feedback: "Feedback"
             }
         }
 
@@ -48,6 +49,7 @@ struct SettingsView: View {
             case .account: "person.fill"
             case .permissions: "checkmark.shield.fill"
             case .about: "info.circle.fill"
+            case .feedback: "bubble.left.fill"
             }
         }
 
@@ -60,6 +62,7 @@ struct SettingsView: View {
             case .account: Tile.account
             case .permissions: Tile.perms
             case .about: Tile.about
+            case .feedback: Tile.feedback
             }
         }
     }
@@ -108,6 +111,7 @@ struct SettingsView: View {
 
             sectionHeader("Yap")
             sidebarRow(.about)
+            sidebarRow(.feedback)
 
             Spacer(minLength: 0)
         }
@@ -160,6 +164,7 @@ struct SettingsView: View {
                     case .account: AccountPane()
                     case .permissions: PermissionsPane()
                     case .about: AboutPane()
+                    case .feedback: FeedbackPane()
                     }
                 }
             }

@@ -27,6 +27,7 @@ enum Tile {
     static let perms     = grad(.mint, .green)
     static let keys      = grad(.yellow, .orange)
     static let about     = grad(.gray, Color.gray.opacity(0.55))
+    static let feedback  = grad(.blue, .indigo)
 
     // Permission card tiles
     static let mic       = grad(.pink, .red)
