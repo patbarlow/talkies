@@ -22,6 +22,7 @@ enum Tile {
     static let library   = grad(.purple, .pink)
     static let hotkey    = grad(.teal, .blue)
     static let cleanup   = grad(.pink, .purple)
+    static let edit      = grad(.green, .mint)
     static let vocab     = grad(.indigo, .blue)
     static let account   = grad(.mint, .teal)
     static let perms     = grad(.mint, .green)

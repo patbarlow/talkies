@@ -4,6 +4,7 @@ import SwiftUI
 
 extension Notification.Name {
     static let yapHotkeyChanged = Notification.Name("YapHotkeyChanged")
+    static let yapEditHotkeyChanged = Notification.Name("YapEditHotkeyChanged")
     static let yapAuthStateChanged = Notification.Name("YapAuthStateChanged")
     static let yapAccessibilityChanged = Notification.Name("YapAccessibilityChanged")
     static let yapOnboardingComplete = Notification.Name("YapOnboardingComplete")
@@ -121,16 +122,40 @@ final class Settings: ObservableObject {
     @Published var vocabularyWords: [String] {
         didSet { UserDefaults.standard.set(vocabularyWords, forKey: "vocabularyWords") }
     }
+    /// Free-form writing preferences (e.g. "Use Australian spelling",
+    /// "Avoid the word 'utilize'"). Surfaced to the edit-mode prompt so
+    /// rewrites respect the user's voice.
+    @Published var personalPreferences: [String] {
+        didSet { UserDefaults.standard.set(personalPreferences, forKey: "personalPreferences") }
+    }
 
     var customVocabulary: String? {
         vocabularyWords.isEmpty ? nil : vocabularyWords.joined(separator: ", ")
     }
-    @Published var hotkey: HotkeySpec {
+    @Published var hotkey: HotkeySpec? {
         didSet {
-            if let data = try? JSONEncoder().encode(hotkey) {
+            if let spec = hotkey, let data = try? JSONEncoder().encode(spec) {
                 UserDefaults.standard.set(data, forKey: "hotkey")
+            } else {
+                UserDefaults.standard.removeObject(forKey: "hotkey")
             }
-            NotificationCenter.default.post(name: .yapHotkeyChanged, object: hotkey)
+            // Mark that the user has consciously chosen a shortcut state
+            // (including "No shortcut" / nil). Without this we'd re-seed the
+            // default on next launch after they cleared it.
+            UserDefaults.standard.set(true, forKey: "hotkeyConfigured")
+            NotificationCenter.default.post(name: .yapHotkeyChanged, object: hotkey as Any)
+        }
+    }
+    /// Optional second hotkey for "edit clipboard / last dictation". When nil
+    /// the second binding is disabled and AppDelegate doesn't install a tap.
+    @Published var editHotkey: HotkeySpec? {
+        didSet {
+            if let spec = editHotkey, let data = try? JSONEncoder().encode(spec) {
+                UserDefaults.standard.set(data, forKey: "editHotkey")
+            } else {
+                UserDefaults.standard.removeObject(forKey: "editHotkey")
+            }
+            NotificationCenter.default.post(name: .yapEditHotkeyChanged, object: editHotkey as Any)
         }
     }
 
@@ -163,11 +188,24 @@ final class Settings: ObservableObject {
             self.vocabularyWords = savedWords
         }
 
+        self.personalPreferences = UserDefaults.standard.stringArray(forKey: "personalPreferences") ?? []
+
         if let data = UserDefaults.standard.data(forKey: "hotkey"),
            let spec = try? JSONDecoder().decode(HotkeySpec.self, from: data) {
             self.hotkey = spec
+        } else if UserDefaults.standard.bool(forKey: "hotkeyConfigured") {
+            // User explicitly chose "No shortcut".
+            self.hotkey = nil
         } else {
+            // First launch — seed a sensible default.
             self.hotkey = .defaultSpec
+        }
+
+        if let data = UserDefaults.standard.data(forKey: "editHotkey"),
+           let spec = try? JSONDecoder().decode(HotkeySpec.self, from: data) {
+            self.editHotkey = spec
+        } else {
+            self.editHotkey = nil
         }
     }
 

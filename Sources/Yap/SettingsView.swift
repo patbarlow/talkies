@@ -1,3 +1,4 @@
+import Carbon.HIToolbox
 import SwiftUI
 
 @MainActor
@@ -21,7 +22,7 @@ struct SettingsView: View {
 
     enum Pane: String, Hashable, CaseIterable, Identifiable {
         case home, library
-        case hotkey, style
+        case dictate, refine
         case account, permissions
         case about, feedback
 
@@ -31,8 +32,8 @@ struct SettingsView: View {
             switch self {
             case .home: "Home"
             case .library: "Library"
-            case .hotkey: "Hotkey"
-            case .style: "Style"
+            case .dictate: "Dictate"
+            case .refine: "Refine"
             case .account: "Account"
             case .permissions: "Permissions"
             case .about: "About"
@@ -44,8 +45,8 @@ struct SettingsView: View {
             switch self {
             case .home: "house.fill"
             case .library: "waveform"
-            case .hotkey: "keyboard.fill"
-            case .style: "sparkles"
+            case .dictate: "mic.fill"
+            case .refine: "wand.and.stars"
             case .account: "person.fill"
             case .permissions: "checkmark.shield.fill"
             case .about: "info.circle.fill"
@@ -57,8 +58,8 @@ struct SettingsView: View {
             switch self {
             case .home: Tile.home
             case .library: Tile.library
-            case .hotkey: Tile.hotkey
-            case .style: Tile.cleanup
+            case .dictate: Tile.hotkey
+            case .refine: Tile.edit
             case .account: Tile.account
             case .permissions: Tile.perms
             case .about: Tile.about
@@ -101,9 +102,9 @@ struct SettingsView: View {
             sidebarRow(.home)
             sidebarRow(.library)
 
-            sectionHeader("Dictation")
-            sidebarRow(.hotkey)
-            sidebarRow(.style)
+            sectionHeader("Voice")
+            sidebarRow(.dictate)
+            sidebarRow(.refine)
 
             sectionHeader("Setup")
             sidebarRow(.account)
@@ -159,8 +160,8 @@ struct SettingsView: View {
                     switch router.selection {
                     case .home: HomePane()
                     case .library: LibraryPane()
-                    case .hotkey: HotkeyPane()
-                    case .style: StylePane()
+                    case .dictate: DictatePane()
+                    case .refine: RefinePane()
                     case .account: AccountPane()
                     case .permissions: PermissionsPane()
                     case .about: AboutPane()
@@ -203,8 +204,6 @@ struct HomePane: View {
             Text(greetingText)
                 .font(.largeTitle.bold())
 
-            // Prefer server totals (cross-device, source of truth); fall back to local
-            // while the user object is loading or if offline.
             let weekWords  = auth.currentUser?.weekWords  ?? stats.weekWords
             let totalWords = auth.currentUser?.totalWords ?? stats.totalWords
 
@@ -226,7 +225,6 @@ struct HomePane: View {
 
             Spacer(minLength: 0)
         }
-        .task { await auth.refresh() }
     }
 }
 
@@ -488,94 +486,61 @@ private struct StatCell: View {
     }
 }
 
-// MARK: - Hotkey
 
-struct HotkeyPane: View {
-    @StateObject private var settings = Settings.shared
+// MARK: - Dictate
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            VStack(alignment: .leading, spacing: 12) {
-                Text("Hold to dictate. Release to transcribe and paste into the frontmost app.")
-                    .foregroundStyle(.secondary)
-                    .font(.callout)
-
-                HStack {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Push to talk").font(.body.weight(.medium))
-                        Text("Hold this key to start recording.").font(.caption).foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                    HotkeyRecorder(spec: Binding(
-                        get: { settings.hotkey },
-                        set: { settings.hotkey = $0 }
-                    ))
-                    .frame(width: 300)
-                }
-            }
-            .padding(16)
-            .background(RoundedRectangle(cornerRadius: 14).fill(Color(nsColor: .controlBackgroundColor)))
-            .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.primary.opacity(0.08)))
-
-            Text("Modifier keys (Right ⌘, fn, …) cancel automatically if another key is pressed, so regular shortcuts like ⌘C still work.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-
-            Spacer()
-        }
-    }
-}
-
-// MARK: - Style
-
-struct StylePane: View {
+struct DictatePane: View {
     @StateObject private var settings = Settings.shared
     @State private var newVocabWord = ""
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 22) {
-            languageSection
+        VStack(alignment: .leading, spacing: 14) {
+            shortcutRow
+            languageRow
             cleanupSection
             vocabularySection
             Spacer(minLength: 0)
         }
     }
 
-    // MARK: Language
+    private var shortcutRow: some View {
+        HStack(alignment: .center) {
+            Text("Shortcut").font(.body.weight(.semibold))
+            Spacer()
+            HotkeyPicker(spec: $settings.hotkey)
+                .frame(width: 240)
+        }
+        .padding(16)
+        .background(SettingsCard())
+    }
 
-    private var languageSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
+    private var languageRow: some View {
+        HStack(alignment: .center) {
             Text("Language").font(.body.weight(.semibold))
-
+            Spacer()
             Picker("Language", selection: $settings.transcriptionLanguage) {
                 ForEach(TranscriptionLanguage.all) { lang in
                     Text(lang.displayName).tag(lang)
                 }
             }
             .labelsHidden()
-            .fixedSize()
+            .frame(width: 240)
         }
-        .padding(18)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: 14).fill(Color(nsColor: .controlBackgroundColor)))
-        .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.primary.opacity(0.08)))
+        .padding(16)
+        .background(SettingsCard())
     }
-
-    // MARK: Cleanup level
 
     private var cleanupSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Cleanup").font(.body.weight(.semibold))
-
             HStack(spacing: 10) {
                 ForEach(CleanupLevel.allCases, id: \.self) { level in
                     cleanupCard(level)
                 }
             }
         }
-        .padding(18)
-        .background(RoundedRectangle(cornerRadius: 14).fill(Color(nsColor: .controlBackgroundColor)))
-        .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.primary.opacity(0.08)))
+        .padding(16)
+        .background(SettingsCard())
     }
 
     private func cleanupCard(_ level: CleanupLevel) -> some View {
@@ -592,7 +557,7 @@ struct StylePane: View {
                 Spacer(minLength: 0)
             }
             .padding(12)
-            .frame(maxWidth: .infinity, minHeight: 90, alignment: .topLeading)
+            .frame(maxWidth: .infinity, minHeight: 80, alignment: .topLeading)
             .background(
                 RoundedRectangle(cornerRadius: 10)
                     .fill(selected ? Color.accentColor : Color.primary.opacity(0.05))
@@ -604,8 +569,6 @@ struct StylePane: View {
         }
         .buttonStyle(.plain)
     }
-
-    // MARK: Vocabulary
 
     private var vocabularySection: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -633,8 +596,7 @@ struct StylePane: View {
                 FlowLayout(spacing: 6) {
                     ForEach(settings.vocabularyWords, id: \.self) { word in
                         HStack(spacing: 5) {
-                            Text(word)
-                                .font(.callout)
+                            Text(word).font(.callout)
                             Button {
                                 settings.vocabularyWords.removeAll { $0 == word }
                             } label: {
@@ -651,9 +613,8 @@ struct StylePane: View {
                 }
             }
         }
-        .padding(18)
-        .background(RoundedRectangle(cornerRadius: 14).fill(Color(nsColor: .controlBackgroundColor)))
-        .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.primary.opacity(0.08)))
+        .padding(16)
+        .background(SettingsCard())
     }
 
     private func addVocabWord() {
@@ -664,6 +625,303 @@ struct StylePane: View {
         }
         settings.vocabularyWords.append(word)
         newVocabWord = ""
+    }
+}
+
+// MARK: - Refine
+
+struct RefinePane: View {
+    @StateObject private var settings = Settings.shared
+    @StateObject private var auth = AuthStore.shared
+    @StateObject private var prefsCoord = PreferenceRecordingCoordinator()
+    @State private var newPreference = ""
+    @State private var exampleIndex = 0
+
+    private let preferenceExamples: [String] = [
+        "I prefer Australian spelling",
+        "Don't use the word 'utilize'",
+        "Use bullet points for lists",
+        "Keep things casual and direct",
+        "End emails with 'Cheers'",
+        "Avoid em dashes",
+        "Don't start sentences with 'So'",
+    ]
+
+    private var isPro: Bool { auth.currentUser?.plan == "pro" }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            if !isPro {
+                ProUpgradeCard(
+                    title: "Refine is a Pro feature",
+                    detail: "Hold a shortcut to refine selected or copied text with a voice instruction. Set personal writing preferences so rewrites sound like you."
+                )
+            }
+            Group {
+                shortcutRow
+                personalizationSection
+            }
+            .opacity(isPro ? 1.0 : 0.55)
+            Spacer(minLength: 0)
+        }
+    }
+
+    private var shortcutRow: some View {
+        HStack(alignment: .center) {
+            Text("Shortcut").font(.body.weight(.semibold))
+            Spacer()
+            HotkeyPicker(
+                spec: Binding(
+                    get: { settings.editHotkey },
+                    set: { settings.editHotkey = $0 }
+                ),
+                disabled: !isPro
+            )
+            .frame(width: 240)
+        }
+        .padding(16)
+        .background(SettingsCard())
+    }
+
+    private var personalizationSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("Personalisation").font(.body.weight(.semibold))
+                Spacer()
+                if case .recording = prefsCoord.phase {
+                    Label("Recording…", systemImage: "mic.fill")
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                } else if case .processing = prefsCoord.phase {
+                    HStack(spacing: 6) {
+                        ProgressView().controlSize(.small)
+                        Text("Extracting…").font(.caption).foregroundStyle(.secondary)
+                    }
+                } else if case .error(let msg) = prefsCoord.phase {
+                    Text(msg).font(.caption).foregroundStyle(.red)
+                }
+            }
+
+            HStack(spacing: 10) {
+                holdToRecordButton
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Hold to record a preference")
+                        .font(.callout.weight(.medium))
+                    Text("e.g. \"\(preferenceExamples[exampleIndex])\"")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .id(exampleIndex)
+                        .transition(.opacity)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .onReceive(Timer.publish(every: 3.5, on: .main, in: .common).autoconnect()) { _ in
+                    withAnimation(.easeInOut(duration: 0.4)) {
+                        exampleIndex = (exampleIndex + 1) % preferenceExamples.count
+                    }
+                }
+            }
+            .padding(10)
+            .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.04)))
+
+            HStack(spacing: 8) {
+                TextField("Or type a preference and press Return", text: $newPreference)
+                    .textFieldStyle(.plain)
+                    .onSubmit { addPreference() }
+                if !newPreference.isEmpty {
+                    Button(action: addPreference) {
+                        Image(systemName: "return")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.05)))
+            .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.primary.opacity(0.12)))
+
+            if !settings.personalPreferences.isEmpty {
+                FlowLayout(spacing: 6) {
+                    ForEach(settings.personalPreferences, id: \.self) { pref in
+                        HStack(spacing: 5) {
+                            Text(pref).font(.callout).lineLimit(1)
+                            Button {
+                                settings.personalPreferences.removeAll { $0 == pref }
+                            } label: {
+                                Image(systemName: "xmark")
+                                    .font(.system(size: 9, weight: .semibold))
+                                    .foregroundStyle(.secondary)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(Capsule().fill(Color.primary.opacity(0.08)))
+                    }
+                }
+            }
+        }
+        .padding(16)
+        .background(SettingsCard())
+    }
+
+    private var holdToRecordButton: some View {
+        let recording = (prefsCoord.phase == .recording)
+        let processing = (prefsCoord.phase == .processing)
+        return ZStack {
+            Circle()
+                .fill(recording ? Color.red : Color.accentColor)
+                .frame(width: 44, height: 44)
+            Image(systemName: recording ? "mic.fill" : "mic")
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(.white)
+        }
+        .opacity(processing ? 0.4 : 1.0)
+        .scaleEffect(recording ? 1.08 : 1.0)
+        .animation(.easeOut(duration: 0.12), value: recording)
+        .gesture(
+            DragGesture(minimumDistance: 0)
+                .onChanged { _ in
+                    guard prefsCoord.phase == .idle else { return }
+                    prefsCoord.start()
+                }
+                .onEnded { _ in
+                    guard prefsCoord.phase == .recording else { return }
+                    Task { await prefsCoord.stopAndExtract(appendingTo: settings) }
+                }
+        )
+    }
+
+    private func addPreference() {
+        let p = newPreference.trimmingCharacters(in: .whitespaces)
+        guard !p.isEmpty, !settings.personalPreferences.contains(p) else {
+            newPreference = ""
+            return
+        }
+        settings.personalPreferences.append(p)
+        newPreference = ""
+    }
+}
+
+// MARK: - Shared bits
+
+private struct SettingsCard: View {
+    var body: some View {
+        RoundedRectangle(cornerRadius: 14)
+            .fill(Color(nsColor: .controlBackgroundColor))
+            .overlay(
+                RoundedRectangle(cornerRadius: 14)
+                    .stroke(Color.primary.opacity(0.08))
+            )
+    }
+}
+
+struct ProUpgradeCard: View {
+    let title: String
+    let detail: String
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 12) {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 6) {
+                    Image(systemName: "sparkles").foregroundStyle(.mint)
+                    Text(title).font(.body.weight(.semibold))
+                }
+                Text(detail)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer()
+            Button("Upgrade") {
+                NotificationCenter.default.post(name: .yapOpenAccount, object: nil)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(.mint)
+        }
+        .padding(16)
+        .background(RoundedRectangle(cornerRadius: 14).fill(Color.mint.opacity(0.08)))
+        .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.mint.opacity(0.4)))
+    }
+}
+
+@MainActor
+final class PreferenceRecordingCoordinator: ObservableObject {
+    enum Phase: Equatable {
+        case idle
+        case recording
+        case processing
+        case error(String)
+    }
+
+    @Published var phase: Phase = .idle
+
+    private let recorder = Recorder()
+    private var startedAt: Date?
+
+    func start() {
+        do {
+            try recorder.start()
+            startedAt = Date()
+            phase = .recording
+        } catch {
+            phase = .error("Mic error: \(error.localizedDescription)")
+            Self.scheduleErrorClear { [weak self] in
+                if case .error = self?.phase { self?.phase = .idle }
+            }
+        }
+    }
+
+    func stopAndExtract(appendingTo settings: Settings) async {
+        let duration = startedAt.map { Date().timeIntervalSince($0) } ?? 0
+        startedAt = nil
+        let peak = AudioLevels.shared.peakLevel
+        guard let url = recorder.stop() else {
+            phase = .idle
+            return
+        }
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        if duration < 0.5 || peak < 0.15 {
+            phase = .idle
+            return
+        }
+
+        phase = .processing
+        do {
+            let (raw, _) = try await Transcriber.shared.transcribe(wavURL: url)
+            let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else {
+                phase = .idle
+                return
+            }
+            guard let token = Settings.shared.sessionToken, !token.isEmpty else {
+                phase = .error("Not signed in.")
+                Self.scheduleErrorClear { [weak self] in
+                    if case .error = self?.phase { self?.phase = .idle }
+                }
+                return
+            }
+            let extracted = try await APIClient.shared.extractPreferences(text: trimmed, session: token)
+            for p in extracted {
+                if !settings.personalPreferences.contains(p) {
+                    settings.personalPreferences.append(p)
+                }
+            }
+            phase = .idle
+        } catch {
+            phase = .error("Couldn't extract: \(error.localizedDescription)")
+            Self.scheduleErrorClear { [weak self] in
+                if case .error = self?.phase { self?.phase = .idle }
+            }
+        }
+    }
+
+    private static func scheduleErrorClear(_ action: @escaping () -> Void) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 4) {
+            MainActor.assumeIsolated { action() }
+        }
     }
 }
 

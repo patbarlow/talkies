@@ -88,8 +88,9 @@ final class OnboardingViewModel: ObservableObject {
 
     func installShortcutHotkey() {
         guard AXIsProcessTrusted(), shortcutHotkey == nil else { return }
+        guard let spec = Settings.shared.hotkey else { return }
         NotificationCenter.default.post(name: .yapSuspendHotkey, object: nil)
-        let hk = Hotkey(spec: Settings.shared.hotkey)
+        let hk = Hotkey(spec: spec)
         hk.onPress = { [weak self] in Task { @MainActor in self?.beginRecording() } }
         hk.onRelease = { [weak self] in Task { @MainActor in self?.endRecording() } }
         hk.onCancel = { [weak self] in Task { @MainActor in self?.cancelRecording() } }
@@ -259,7 +260,7 @@ private struct WelcomeStep: View {
                         Text("Your shortcut")
                             .font(.callout.weight(.medium))
                             .foregroundStyle(.white)
-                        Text(Settings.shared.hotkey.label)
+                        Text(Settings.shared.hotkey?.label ?? "your shortcut")
                             .font(.caption.weight(.bold))
                             .foregroundStyle(.white)
                             .padding(.horizontal, 7)
@@ -441,7 +442,7 @@ private struct TryShortcutStep: View {
 
             HStack(spacing: 5) {
                 Text("Hold")
-                Text(Settings.shared.hotkey.label)
+                Text(Settings.shared.hotkey?.label ?? "your shortcut")
                     .font(.callout.weight(.bold))
                     .padding(.horizontal, 7)
                     .padding(.vertical, 3)

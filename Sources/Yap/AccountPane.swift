@@ -9,6 +9,9 @@ struct AccountPane: View {
     @State private var nameDraft: String = ""
     @State private var upgrading: Bool = false
     @State private var upgradeError: String?
+    @State private var subInfo: APIClient.SubscriptionInfo?
+    @State private var openingPortal: Bool = false
+    @State private var portalError: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
@@ -21,12 +24,135 @@ struct AccountPane: View {
             }
             Spacer()
         }
-        .task { await auth.refresh() }
+        .task {
+            await auth.refresh()
+            await loadSubscriptionIfNeeded()
+        }
         .onAppear {
             if nameDraft.isEmpty { nameDraft = auth.currentUser?.name ?? "" }
         }
         .onChange(of: auth.currentUser?.name) { _, new in
             nameDraft = new ?? ""
+        }
+        .onChange(of: auth.currentUser?.plan) { _, _ in
+            Task { await loadSubscriptionIfNeeded() }
+        }
+    }
+
+    @ViewBuilder
+    private var proPlanCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                HStack(spacing: 6) {
+                    Image(systemName: "sparkles").foregroundStyle(.mint)
+                    Text("Yap Pro").font(.body.weight(.semibold))
+                }
+                Spacer()
+                if let info = subInfo {
+                    Text(statusBadge(info))
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(statusColor(info))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(Capsule().fill(statusColor(info).opacity(0.15)))
+                }
+            }
+
+            if let info = subInfo {
+                if let amount = formattedAmount(info) {
+                    Text(amount).font(.callout).foregroundStyle(.secondary)
+                }
+                if let renewal = formattedRenewal(info) {
+                    Text(renewal).font(.caption).foregroundStyle(.secondary)
+                }
+            } else {
+                Text("Loading…").font(.caption).foregroundStyle(.secondary)
+            }
+
+            Button(action: openPortal) {
+                Text(openingPortal ? "Opening…" : "Manage subscription")
+                    .frame(minWidth: 160)
+            }
+            .buttonStyle(.bordered)
+            .disabled(openingPortal)
+
+            if let err = portalError {
+                Text(err).font(.caption).foregroundStyle(.red)
+            }
+        }
+        .padding(18)
+        .background(RoundedRectangle(cornerRadius: 14).fill(Color(nsColor: .controlBackgroundColor)))
+        .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.primary.opacity(0.08)))
+    }
+
+    private func statusBadge(_ info: APIClient.SubscriptionInfo) -> String {
+        if info.cancelAtPeriodEnd { return "Cancels at period end" }
+        switch info.status {
+        case "active":   return "Active"
+        case "trialing": return "Trialing"
+        case "past_due": return "Past due"
+        case "canceled", "unpaid": return "Inactive"
+        default: return info.status.capitalized
+        }
+    }
+
+    private func statusColor(_ info: APIClient.SubscriptionInfo) -> Color {
+        if info.cancelAtPeriodEnd { return .orange }
+        switch info.status {
+        case "active", "trialing": return .mint
+        case "past_due", "canceled", "unpaid": return .red
+        default: return .secondary
+        }
+    }
+
+    private func formattedAmount(_ info: APIClient.SubscriptionInfo) -> String? {
+        guard let cents = info.amountCents, let currency = info.currency else { return nil }
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .currency
+        formatter.currencyCode = currency.uppercased()
+        let amount = Double(cents) / 100.0
+        let priceStr = formatter.string(from: NSNumber(value: amount)) ?? "\(amount)"
+        if let interval = info.interval {
+            return "\(priceStr) / \(interval)"
+        }
+        return priceStr
+    }
+
+    private func formattedRenewal(_ info: APIClient.SubscriptionInfo) -> String? {
+        guard let ts = info.currentPeriodEnd else { return nil }
+        let date = Date(timeIntervalSince1970: TimeInterval(ts))
+        let df = DateFormatter()
+        df.dateStyle = .medium
+        let label = info.cancelAtPeriodEnd ? "Ends" : "Renews"
+        return "\(label) \(df.string(from: date))"
+    }
+
+    private func openPortal() {
+        guard let session = Settings.shared.sessionToken, !openingPortal else { return }
+        openingPortal = true
+        portalError = nil
+        Task {
+            defer { openingPortal = false }
+            do {
+                let url = try await APIClient.shared.stripePortal(session: session)
+                NSWorkspace.shared.open(url)
+            } catch {
+                portalError = error.localizedDescription
+            }
+        }
+    }
+
+    private func loadSubscriptionIfNeeded() async {
+        guard auth.currentUser?.plan == "pro",
+              let session = Settings.shared.sessionToken else {
+            subInfo = nil
+            return
+        }
+        do {
+            subInfo = try await APIClient.shared.stripeSubscription(session: session)
+        } catch {
+            // Not fatal — just leave subInfo nil and the card shows "Loading…".
+            NSLog("Yap: subscription load error \(error)")
         }
     }
 
@@ -108,11 +234,11 @@ struct AccountPane: View {
         .background(RoundedRectangle(cornerRadius: 14).fill(Color(nsColor: .controlBackgroundColor)))
         .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.primary.opacity(0.08)))
 
-        // Upgrade card — shown only on free plan
+        // Plan card — different content for free vs pro
         if user.plan == "free" {
             VStack(alignment: .leading, spacing: 10) {
                 Text("Upgrade to Yap Pro").font(.body.weight(.semibold))
-                Text("Unlimited words per week. Supports development.")
+                Text("Unlimited words per week. Refine selected text by voice. Supports development.")
                     .font(.callout).foregroundStyle(.secondary)
                 Button(action: upgrade) {
                     Text(upgrading ? "Waiting for payment…" : "Upgrade…")
@@ -128,6 +254,8 @@ struct AccountPane: View {
             .padding(18)
             .background(RoundedRectangle(cornerRadius: 14).fill(Color(nsColor: .controlBackgroundColor)))
             .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.primary.opacity(0.08)))
+        } else {
+            proPlanCard
         }
 
         HStack {

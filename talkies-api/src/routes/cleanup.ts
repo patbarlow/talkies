@@ -44,14 +44,34 @@ app.post("/", async (c) => {
   const payload = (await res.json()) as {
     content: Array<{ type: string; text?: string }>;
   };
-  const text = payload.content
+  const cleaned = payload.content
     .filter((block) => block.type === "text")
     .map((block) => block.text ?? "")
     .join("")
     .trim();
 
+  // Sanity check: if the cleanup output is dramatically longer than the
+  // input, Claude likely misread a short or hallucinated transcription as a
+  // chat message and replied conversationally ("I'm ready to clean up
+  // dictated text for you…"). Fall back to the raw input so the user gets
+  // their actual words rather than a chat reply.
+  const text = looksHallucinated(input, cleaned) ? input : cleaned;
+
   return c.json({ text });
 });
+
+function wordCount(s: string): number {
+  return s.split(/\s+/).filter(Boolean).length;
+}
+
+function looksHallucinated(input: string, output: string): boolean {
+  const inWords = wordCount(input);
+  const outWords = wordCount(output);
+  // Cleanup should never balloon the text. 3× the word count + a small
+  // floor keeps short legitimate dictations ("yes" → "Yes.") from tripping
+  // the guard while catching 30+ word chat replies to ≤10-word inputs.
+  return outWords > 10 && outWords > inWords * 3;
+}
 
 function toneInstruction(tone?: string): string {
   switch (tone) {

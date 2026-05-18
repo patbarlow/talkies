@@ -24,7 +24,7 @@ final class Recorder {
         ]
         file = try AVAudioFile(forWriting: url, settings: fileSettings)
 
-        AudioLevels.shared.reset()
+        AudioLevels.shared.resetForRecording()
 
         input.installTap(onBus: 0, bufferSize: 4096, format: sourceFormat) { [weak self] buffer, _ in
             try? self?.file?.write(from: buffer)

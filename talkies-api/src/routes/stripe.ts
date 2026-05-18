@@ -55,6 +55,115 @@ app.post("/checkout", requireAuth, async (c) => {
 });
 
 /**
+ * Authed: open a Stripe Customer Portal session for the current user.
+ * Returns the URL the client should open in a browser. The portal lets the
+ * user manage billing details and cancel.
+ */
+app.post("/portal", requireAuth, async (c) => {
+  const user = c.get("user");
+  if (!user.stripe_customer_id) {
+    return c.json({ error: "no_customer" }, 400);
+  }
+  const res = await fetch("https://api.stripe.com/v1/billing_portal/sessions", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${c.env.STRIPE_SECRET_KEY}`,
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
+    body: new URLSearchParams({
+      customer: user.stripe_customer_id,
+      return_url: "talkies://billing/return",
+    }).toString(),
+  });
+  if (!res.ok) {
+    return c.json({ error: "stripe_error", detail: await res.text() }, 502);
+  }
+  const session = (await res.json()) as { url: string };
+  return c.json({ url: session.url });
+});
+
+/**
+ * Authed: returns lightweight subscription info for the current Pro user
+ * (status, period end, amount). Used by the Account pane's plan card.
+ *
+ * The same Stripe customer may have subscriptions for multiple products —
+ * we deliberately don't trust the stored `stripe_subscription_id` (it can
+ * race against other products' webhooks). Instead we list the customer's
+ * subscriptions and pick the one whose price matches our Pro price ID.
+ */
+app.get("/subscription", requireAuth, async (c) => {
+  const user = c.get("user");
+  if (!user.stripe_customer_id || !c.env.STRIPE_PRICE_ID_PRO) {
+    return c.json({ subscription: null });
+  }
+
+  const url =
+    `https://api.stripe.com/v1/subscriptions` +
+    `?customer=${encodeURIComponent(user.stripe_customer_id)}` +
+    `&status=all&limit=20&expand[]=data.items.data.price`;
+  const res = await fetch(url, {
+    headers: { Authorization: `Bearer ${c.env.STRIPE_SECRET_KEY}` },
+  });
+  if (!res.ok) {
+    return c.json({ error: "stripe_error", detail: await res.text() }, 502);
+  }
+
+  const list = (await res.json()) as {
+    data: Array<{
+      id: string;
+      status: string;
+      cancel_at_period_end: boolean;
+      current_period_end?: number;
+      items?: {
+        data: Array<{
+          current_period_end?: number;
+          price?: {
+            id?: string;
+            unit_amount?: number;
+            currency?: string;
+            recurring?: { interval?: string };
+          };
+        }>;
+      };
+    }>;
+  };
+
+  const proPriceId = c.env.STRIPE_PRICE_ID_PRO;
+  const yapSubs = list.data.filter((sub) =>
+    sub.items?.data?.some((item) => item.price?.id === proPriceId),
+  );
+
+  if (yapSubs.length === 0) {
+    return c.json({ subscription: null });
+  }
+
+  // Prefer an active or trialing subscription; fall back to whichever is
+  // first (Stripe lists newest-first by default).
+  const yapSub =
+    yapSubs.find((s) => s.status === "active" || s.status === "trialing") ?? yapSubs[0];
+  if (!yapSub) {
+    return c.json({ subscription: null });
+  }
+
+  const yapItem = yapSub.items?.data?.find((it) => it.price?.id === proPriceId);
+  // Stripe API v2024-09+ moved current_period_end onto the item; older
+  // versions kept it on the sub. Read whichever is present.
+  const itemPeriodEnd = (yapItem as { current_period_end?: number } | undefined)?.current_period_end;
+  const price = yapItem?.price;
+
+  return c.json({
+    subscription: {
+      status: yapSub.status,
+      cancelAtPeriodEnd: yapSub.cancel_at_period_end,
+      currentPeriodEnd: yapSub.current_period_end ?? itemPeriodEnd ?? null,
+      amountCents: price?.unit_amount ?? null,
+      currency: price?.currency ?? null,
+      interval: price?.recurring?.interval ?? null,
+    },
+  });
+});
+
+/**
  * Stripe → us. Verify the webhook signature (HMAC-SHA256 over `{t}.{body}`),
  * then update the user's plan based on subscription lifecycle events.
  */
@@ -82,8 +191,16 @@ app.post("/webhook", async (c) => {
         id: string;
         customer: string;
         status: string;
+        items?: { data: Array<{ price?: { id?: string } }> };
       };
+      // Same Stripe customer may have subscriptions across products. Only
+      // react if this event is for *our* price — otherwise other products'
+      // events would clobber the user's plan and stored sub ID.
+      if (!isYapSubscription(sub, c.env.STRIPE_PRICE_ID_PRO)) {
+        break;
+      }
       const plan = sub.status === "active" || sub.status === "trialing" ? "pro" : "free";
+      await ensureStripeCustomerLinked(c.env.DB, c.env.STRIPE_SECRET_KEY, sub.customer);
       const preUpdate = await c.env.DB
         .prepare("SELECT email, plan FROM users WHERE stripe_customer_id = ?")
         .bind(sub.customer)
@@ -95,7 +212,14 @@ app.post("/webhook", async (c) => {
       break;
     }
     case "customer.subscription.deleted": {
-      const sub = event.data.object as { customer: string };
+      const sub = event.data.object as {
+        customer: string;
+        items?: { data: Array<{ price?: { id?: string } }> };
+      };
+      if (!isYapSubscription(sub, c.env.STRIPE_PRICE_ID_PRO)) {
+        break;
+      }
+      await ensureStripeCustomerLinked(c.env.DB, c.env.STRIPE_SECRET_KEY, sub.customer);
       const preUpdate = await c.env.DB
         .prepare("SELECT email FROM users WHERE stripe_customer_id = ?")
         .bind(sub.customer)
@@ -108,6 +232,35 @@ app.post("/webhook", async (c) => {
 
   return c.json({ received: true });
 });
+
+/**
+ * If no user row has stripe_customer_id = customerId, fetch the customer's
+ * email from Stripe and set it on the matching user row. This handles the
+ * race where the webhook fires before setStripeCustomerId completes.
+ */
+async function ensureStripeCustomerLinked(
+  db: D1Database,
+  secretKey: string,
+  customerId: string,
+): Promise<void> {
+  const existing = await db
+    .prepare("SELECT id FROM users WHERE stripe_customer_id = ?")
+    .bind(customerId)
+    .first<{ id: string }>();
+  if (existing) return;
+
+  const res = await fetch(`https://api.stripe.com/v1/customers/${customerId}`, {
+    headers: { Authorization: `Bearer ${secretKey}` },
+  });
+  if (!res.ok) return;
+  const customer = (await res.json()) as { email?: string };
+  if (!customer.email) return;
+
+  await db
+    .prepare("UPDATE users SET stripe_customer_id = ?, updated_at = ? WHERE email = ? AND stripe_customer_id IS NULL")
+    .bind(customerId, new Date().toISOString(), customer.email)
+    .run();
+}
 
 /**
  * Returns an existing Stripe customer for the given email (across all products
@@ -190,6 +343,19 @@ async function verifyStripeSignature(
 
   // Constant-time-ish compare.
   return expected.some((cand) => cand.length === computed.length && cand === computed);
+}
+
+/**
+ * True if the given subscription contains an item whose price ID matches
+ * the configured Yap Pro price. Webhooks fire for every subscription on a
+ * customer, including subs for unrelated products that share the customer.
+ */
+function isYapSubscription(
+  sub: { items?: { data: Array<{ price?: { id?: string } }> } },
+  proPriceId: string | undefined,
+): boolean {
+  if (!proPriceId) return false;
+  return sub.items?.data?.some((item) => item.price?.id === proPriceId) ?? false;
 }
 
 export default app;
