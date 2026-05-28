@@ -4,6 +4,7 @@ import SwiftUI
 
 extension Notification.Name {
     static let yapHotkeyChanged = Notification.Name("YapHotkeyChanged")
+    static let yapMouseHotkeyChanged = Notification.Name("YapMouseHotkeyChanged")
     static let yapEditHotkeyChanged = Notification.Name("YapEditHotkeyChanged")
     static let yapAuthStateChanged = Notification.Name("YapAuthStateChanged")
     static let yapAccessibilityChanged = Notification.Name("YapAccessibilityChanged")
@@ -146,6 +147,20 @@ final class Settings: ObservableObject {
             NotificationCenter.default.post(name: .yapHotkeyChanged, object: hotkey as Any)
         }
     }
+    /// Optional mouse-button shortcut for dictation. Independent of `hotkey`,
+    /// so the user can have both a keyboard binding and a mouse binding
+    /// installed at once. Uses toggle semantics (click 1 starts, click 2
+    /// stops) — implemented in `Hotkey` for `.mouse` specs.
+    @Published var mouseHotkey: HotkeySpec? {
+        didSet {
+            if let spec = mouseHotkey, let data = try? JSONEncoder().encode(spec) {
+                UserDefaults.standard.set(data, forKey: "mouseHotkey")
+            } else {
+                UserDefaults.standard.removeObject(forKey: "mouseHotkey")
+            }
+            NotificationCenter.default.post(name: .yapMouseHotkeyChanged, object: mouseHotkey as Any)
+        }
+    }
     /// Optional second hotkey for "edit clipboard / last dictation". When nil
     /// the second binding is disabled and AppDelegate doesn't install a tap.
     @Published var editHotkey: HotkeySpec? {
@@ -206,6 +221,13 @@ final class Settings: ObservableObject {
             self.editHotkey = spec
         } else {
             self.editHotkey = nil
+        }
+
+        if let data = UserDefaults.standard.data(forKey: "mouseHotkey"),
+           let spec = try? JSONDecoder().decode(HotkeySpec.self, from: data) {
+            self.mouseHotkey = spec
+        } else {
+            self.mouseHotkey = nil
         }
     }
 

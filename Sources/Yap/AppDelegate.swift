@@ -8,10 +8,23 @@ private final class SettingsHostingView: NSHostingView<SettingsView> {
     override var mouseDownCanMoveWindow: Bool { false }
 }
 
+/// Bring Yap's titled windows (Settings, Onboarding) back to the front and
+/// re-key the foremost one. Used after the system mic / accessibility TCC
+/// dialog dismisses — macOS doesn't reliably restore focus to the requesting
+/// app, and our window can end up buried, which looks like Yap crashed.
+@MainActor
+func bringYapWindowsToFront() {
+    NSApp.activate(ignoringOtherApps: true)
+    let titled = NSApp.windows.filter { $0.styleMask.contains(.titled) && $0.isVisible }
+    for w in titled { w.orderFront(nil) }
+    titled.first?.makeKeyAndOrderFront(nil)
+}
+
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
     private var hotkey: Hotkey?
+    private var mouseHotkey: Hotkey?
     private var editHotkey: Hotkey?
     private let recorder = Recorder()
     private var isRecording = false
@@ -40,6 +53,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.mainMenu = buildAppMenu()
         buildMenuBar()
         refreshStatus()
+        LoginItem.registerOnFirstRunIfNeeded()
 
         // Register handler for yap:// deep links (e.g. yap://record from the Claude Code hook).
         // kInternetEventClass / kAEGetURL are both the four-char code 'GURL' = 0x4755524C.
@@ -59,6 +73,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             MainActor.assumeIsolated {
                 let spec = note.object as? HotkeySpec
                 self?.applyDictateHotkey(spec: spec)
+                self?.refreshStatus()
+            }
+        }
+
+        // Mouse hotkey changed — install/uninstall/update.
+        NotificationCenter.default.addObserver(
+            forName: .yapMouseHotkeyChanged,
+            object: nil,
+            queue: .main
+        ) { [weak self] note in
+            MainActor.assumeIsolated {
+                let spec = note.object as? HotkeySpec
+                self?.applyMouseHotkey(spec: spec)
                 self?.refreshStatus()
             }
         }
@@ -84,7 +111,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NotificationCenter.default.addObserver(
             forName: .yapAccessibilityChanged, object: nil, queue: .main
         ) { [weak self] _ in
-            MainActor.assumeIsolated { self?.reconcile() }
+            MainActor.assumeIsolated {
+                // Tear down and re-install the global event tap so the new
+                // accessibility grant takes effect immediately — without this,
+                // `hotkey` is non-nil but non-functional from the pre-grant
+                // attempt, so `reconcile()` skips reinstallation and the user
+                // would otherwise wait up to 2s for the retry timer (or worse,
+                // think they need to relaunch).
+                self?.reinstallHotkey()
+                self?.reconcile()
+            }
         }
 
         // Any titled window closing (Settings, Sparkle update panel, etc.) → revert
@@ -191,6 +227,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard isAuthed else {
             hotkey?.uninstall()
             hotkey = nil
+            mouseHotkey?.uninstall()
+            mouseHotkey = nil
             editHotkey?.uninstall()
             editHotkey = nil
             retryTimer?.invalidate()
@@ -390,13 +428,51 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func reinstallHotkey() {
         hotkey?.uninstall()
+        mouseHotkey?.uninstall()
+        editHotkey?.uninstall()
+        hotkey = nil
+        mouseHotkey = nil
+        editHotkey = nil
         installHotkey()
         refreshStatus()
     }
 
     private func installHotkey() {
         applyDictateHotkey(spec: Settings.shared.hotkey)
+        applyMouseHotkey(spec: Settings.shared.mouseHotkey)
         applyEditHotkey(spec: Settings.shared.editHotkey)
+    }
+
+    /// Install / update / uninstall the optional mouse-button dictation
+    /// shortcut. Uses the *same* callbacks as the keyboard dictate hotkey so
+    /// the recording lifecycle is identical — the only difference is the
+    /// underlying `Hotkey` uses toggle semantics (click 1 = press, click 2
+    /// = release).
+    private func applyMouseHotkey(spec: HotkeySpec?) {
+        guard let spec else {
+            mouseHotkey?.uninstall()
+            mouseHotkey = nil
+            return
+        }
+        if let existing = mouseHotkey {
+            existing.update(spec: spec)
+            return
+        }
+        let hk = Hotkey(spec: spec)
+        hk.onPress = { [weak self] in
+            NSLog("Yap: mouse hotkey pressed")
+            if EditModeController.shared.tryHandlePress(kind: .dictate) { return }
+            self?.startRecording()
+        }
+        hk.onRelease = { [weak self] in
+            NSLog("Yap: mouse hotkey released")
+            if EditModeController.shared.tryHandleRelease() { return }
+            Task { await self?.stopAndProcess() }
+        }
+        // No onCancel for mouse — a single physical button has no analogue
+        // to "another key was pressed while held".
+        mouseHotkey = hk
+        _ = hk.install()
     }
 
     /// Install / update / uninstall the primary dictation hotkey.

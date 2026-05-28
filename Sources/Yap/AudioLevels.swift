@@ -7,19 +7,18 @@ import SwiftUI
 final class AudioLevels: ObservableObject {
     static let shared = AudioLevels()
 
-    /// Fixed-size ring of recent levels, mapped to [0, 1]. Oldest → newest.
-    @Published private(set) var bars: [CGFloat]
+    /// Current normalized mic level in [0, 1], updated each tap fire (~11Hz
+    /// at the recorder's default buffer size). The recording pill uses this
+    /// as the source of truth — every bar reacts to the *same* current
+    /// reading with a per-bar amplitude shape, so the visualization moves
+    /// with the voice instead of scrolling left-to-right like a ring buffer.
+    @Published private(set) var currentLevel: CGFloat = 0
     /// Highest level seen since `resetForRecording`. Used by the dictation
     /// pipeline to gate out silent recordings (where Whisper would otherwise
     /// hallucinate "Thank you." or similar) before they hit the API.
     private(set) var peakLevel: CGFloat = 0
 
-    private let barCount: Int
-
-    private init(barCount: Int = 5) {
-        self.barCount = barCount
-        self.bars = Array(repeating: 0.08, count: barCount)
-    }
+    private init() {}
 
     /// Called from an audio thread via the Recorder tap; dispatches to main.
     nonisolated func pushFromAudioThread(rms: Float) {
@@ -31,24 +30,21 @@ final class AudioLevels: ObservableObject {
         }
     }
 
-    /// Clears the visual bars only. Called when the visual pill goes away;
+    /// Clears the visual level only. Called when the visual pill goes away;
     /// preserves peakLevel so the pipeline can still gate on silence after
     /// stop().
     func reset() {
-        bars = Array(repeating: 0.08, count: barCount)
+        currentLevel = 0
     }
 
-    /// Clears bars *and* peak. Call at the start of each recording.
+    /// Clears level *and* peak. Call at the start of each recording.
     func resetForRecording() {
-        bars = Array(repeating: 0.08, count: barCount)
+        currentLevel = 0
         peakLevel = 0
     }
 
     private func push(_ value: CGFloat) {
-        var next = bars
-        next.removeFirst()
-        next.append(value)
-        bars = next
+        currentLevel = value
         if value > peakLevel { peakLevel = value }
     }
 }

@@ -44,7 +44,12 @@ final class OnboardingViewModel: ObservableObject {
                 let m = AVCaptureDevice.authorizationStatus(for: .audio)
                 let a = AXIsProcessTrusted()
                 if m != self.micStatus { self.micStatus = m }
-                if a != self.axGranted { self.axGranted = a }
+                if a != self.axGranted {
+                    self.axGranted = a
+                    // Wake AppDelegate now rather than waiting up to 2s for its
+                    // own retry timer to find that accessibility is granted.
+                    NotificationCenter.default.post(name: .yapAccessibilityChanged, object: nil)
+                }
             }
         }
     }
@@ -56,6 +61,11 @@ final class OnboardingViewModel: ObservableObject {
             AVCaptureDevice.requestAccess(for: .audio) { [weak self] _ in
                 DispatchQueue.main.async {
                     self?.micStatus = AVCaptureDevice.authorizationStatus(for: .audio)
+                    // The TCC permission dialog steals focus and macOS doesn't
+                    // restore it to Yap when it dismisses — the onboarding
+                    // window ends up behind everything else, which makes it
+                    // look like Yap crashed. Reactivate explicitly.
+                    bringYapWindowsToFront()
                 }
             }
         } else {
@@ -64,9 +74,16 @@ final class OnboardingViewModel: ObservableObject {
     }
 
     func requestAccessibility() {
+        // AXIsProcessTrustedWithOptions(prompt:true) does two important
+        // things: it registers Yap in the Accessibility list (so a toggle
+        // appears even before the user has done anything), and it shows the
+        // standard TCC dialog with an "Open System Settings" button.
+        //
+        // We intentionally do NOT also call `NSWorkspace.shared.open(...)` —
+        // doing both produces two competing windows and macOS auto-opens
+        // Settings before the user can click the TCC button.
         let opts = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
         _ = AXIsProcessTrustedWithOptions(opts)
-        NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)
     }
 
     // MARK: Mic test
@@ -161,7 +178,7 @@ final class OnboardingWaveform: ObservableObject {
             Task { @MainActor in
                 guard let self else { return }
                 self.phase += 0.08
-                let level = AudioLevels.shared.bars.last ?? 0.0
+                let level = AudioLevels.shared.currentLevel
                 self.bars = (0..<self.barCount).map { i in
                     let idle = sin(self.phase + self.phases[i]) * 0.04 + 0.06
                     let audio = level * (0.65 + sin(self.phases[i] * 1.4) * 0.35)
@@ -520,21 +537,24 @@ private struct TryShortcutStep: View {
 
 private struct RecordingBarsView: View {
     @ObservedObject var levels: AudioLevels
-    @State private var phase: Double = 0
+    private let barCount = 13
 
     var body: some View {
         HStack(spacing: 4) {
-            ForEach(levels.bars.indices, id: \.self) { i in
-                let level = Double(levels.bars[i])
-                let idle = sin(phase + Double(i) * 1.2) * 3 + 5
+            ForEach(0..<barCount, id: \.self) { i in
+                let level = Double(levels.currentLevel)
+                let center = Double(barCount - 1) / 2
+                let dist = abs(Double(i) - center) / center
+                let asymmetry = (Int(i) % 2 == 0 ? 1.0 : -1.0) * 0.04
+                let threshold = 0.08 + (0.55 - 0.08) * pow(dist, 1.3) + asymmetry
+                let headroom = max(0.001, 1 - threshold)
+                let activation = max(0, (level - threshold) / headroom)
+                let eased = pow(activation, 0.6)
                 Capsule()
                     .fill(Color.mint)
-                    .frame(width: 4, height: max(4, idle + level * 34))
-                    .animation(.easeOut(duration: 0.08), value: level)
+                    .frame(width: 4, height: max(4, 4 + CGFloat(eased) * 34))
+                    .animation(.spring(response: 0.18, dampingFraction: 0.78), value: levels.currentLevel)
             }
-        }
-        .onReceive(Timer.publish(every: 0.05, on: .main, in: .common).autoconnect()) { _ in
-            phase += 0.06
         }
     }
 }
