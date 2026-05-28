@@ -91,7 +91,7 @@ struct HotkeyPicker: View {
             menu
             if awaitingCustom {
                 Button(action: toggleRecording) {
-                    Text(isRecording ? "Press any key or modifier… (Esc to cancel)" : "Set shortcut")
+                    Text(isRecording ? "Press any key, modifier, or mouse button… (Esc to cancel)" : "Set shortcut")
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 4)
                 }
@@ -205,6 +205,10 @@ struct HotkeyPicker: View {
     private func startRecording() {
         stopRecording()
         isRecording = true
+        // Keyboard-only recorder. The mouse-button binding has its own
+        // dedicated picker (MouseShortcutPicker) so we don't conflate the
+        // two — a user clicking on the menu while binding a key shouldn't
+        // accidentally capture a mouse button.
         monitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .flagsChanged]) { event in
             let code = UInt16(event.keyCode)
 
@@ -234,6 +238,111 @@ struct HotkeyPicker: View {
         spec = newSpec
         awaitingCustom = false
         stopRecording()
+    }
+
+    private func stopRecording() {
+        isRecording = false
+        if let m = monitor { NSEvent.removeMonitor(m); monitor = nil }
+    }
+}
+
+/// Mouse-only variant of the shortcut picker. Shows the current binding
+/// label (or "No shortcut") and a "Set mouse button" recorder. Only
+/// `.otherMouseDown` events with buttonNumber ≥ 3 are accepted — left/right/
+/// middle are deliberately ignored so the user can't accidentally hijack
+/// basic clicking.
+struct MouseShortcutPicker: View {
+    @Binding var spec: HotkeySpec?
+    var disabled: Bool = false
+
+    @State private var isRecording = false
+    @State private var monitor: Any?
+
+    var body: some View {
+        VStack(alignment: .trailing, spacing: 8) {
+            menu
+            if isRecording {
+                Button(action: stopRecording) {
+                    Text("Click your mouse button… (Esc to cancel)")
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 4)
+                }
+                .buttonStyle(.bordered)
+                .disabled(disabled)
+            }
+        }
+        .onDisappear { stopRecording() }
+        .onChange(of: disabled) { _, newValue in
+            if newValue { stopRecording() }
+        }
+    }
+
+    private var menu: some View {
+        Menu {
+            Button {
+                startRecording()
+            } label: {
+                HStack {
+                    Text(spec == nil ? "Set mouse button…" : "Change…")
+                    if isRecording { Image(systemName: "checkmark") }
+                }
+            }
+            if spec != nil {
+                Divider()
+                Button {
+                    stopRecording()
+                    spec = nil
+                } label: {
+                    HStack {
+                        Text("No shortcut")
+                    }
+                }
+            }
+        } label: {
+            HStack {
+                Text(currentLabel)
+                    .foregroundStyle(disabled ? .secondary : .primary)
+                Spacer(minLength: 4)
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.06)))
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .disabled(disabled)
+    }
+
+    private var currentLabel: String {
+        if let spec, spec.kind == .mouse { return spec.label }
+        return "No shortcut"
+    }
+
+    private func startRecording() {
+        stopRecording()
+        isRecording = true
+        monitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .otherMouseDown]) { event in
+            if event.type == .keyDown {
+                // Allow Esc to cancel while the recorder is open.
+                if Int(event.keyCode) == 0x35 {
+                    stopRecording()
+                    return nil
+                }
+                return event
+            }
+            if event.type == .otherMouseDown {
+                let button = event.buttonNumber
+                guard button >= 3 else { return event }
+                let label = HotkeySpec.mouseLabel(for: button)
+                spec = HotkeySpec(kind: .mouse, keyCode: UInt16(button), label: label)
+                stopRecording()
+                return nil
+            }
+            return event
+        }
     }
 
     private func stopRecording() {

@@ -2,13 +2,27 @@ import AppKit
 import Carbon.HIToolbox
 import CoreGraphics
 
-/// A push-to-talk binding. Either a regular key (F5, letters, …) or a single modifier (right-⌘, fn, …).
+/// A push-to-talk binding. One of:
+///   - a regular key (F5, letters, …)
+///   - a single modifier (right-⌘, fn, …)
+///   - a mouse button (extra mouse buttons 4, 5, …). Mouse bindings use
+///     TOGGLE semantics rather than hold — first click starts recording,
+///     second click stops it. The Hotkey class implements that by firing
+///     `onPress` on the first click and `onRelease` on the second, so the
+///     rest of the app doesn't need to know the binding is a mouse.
 struct HotkeySpec: Codable, Equatable {
-    enum Kind: String, Codable { case key, modifier }
+    enum Kind: String, Codable { case key, modifier, mouse }
 
+    /// For `.key` and `.modifier`: the keyboard keyCode.
+    /// For `.mouse`:           the buttonNumber (0=left, 1=right, 2=middle, 3+=extras).
     var kind: Kind
     var keyCode: UInt16
     var label: String
+
+    static func mouseLabel(for buttonNumber: Int) -> String {
+        // 1-indexed for display; macOS reports button 3 as the first "extra".
+        "Mouse \(buttonNumber + 1)"
+    }
 
     static let defaultSpec = HotkeySpec(
         kind: .modifier,
@@ -108,6 +122,8 @@ final class Hotkey {
             mask =
                 (1 << CGEventType.flagsChanged.rawValue) |
                 (1 << CGEventType.keyDown.rawValue)
+        case .mouse:
+            mask = (1 << CGEventType.otherMouseDown.rawValue)
         }
 
         let callback: CGEventTapCallBack = { _, type, event, userInfo in
@@ -153,6 +169,26 @@ final class Hotkey {
     }
 
     private func handle(type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent>? {
+        if spec.kind == .mouse {
+            // Mouse binding — toggle semantics. The first click starts a
+            // recording session (onPress); the second click ends it
+            // (onRelease). We swallow the event so apps under the cursor
+            // don't see the click. Cancels (onCancel) aren't fired by
+            // mouse-toggle — there's no natural "another key pressed"
+            // moment with a single physical button.
+            guard type == .otherMouseDown else { return Unmanaged.passUnretained(event) }
+            let button = UInt16(event.getIntegerValueField(.mouseEventButtonNumber))
+            guard button == spec.keyCode else { return Unmanaged.passUnretained(event) }
+            if isDown {
+                isDown = false
+                DispatchQueue.main.async { self.onRelease?() }
+            } else {
+                isDown = true
+                DispatchQueue.main.async { self.onPress?() }
+            }
+            return nil
+        }
+
         let code = UInt16(event.getIntegerValueField(.keyboardEventKeycode))
 
         switch spec.kind {
@@ -193,6 +229,11 @@ final class Hotkey {
                 DispatchQueue.main.async { self.onCancel?() }
                 return Unmanaged.passUnretained(event)
             }
+            return Unmanaged.passUnretained(event)
+
+        case .mouse:
+            // Handled in the early return above; this branch is unreachable
+            // but keeps the switch exhaustive for the compiler.
             return Unmanaged.passUnretained(event)
         }
     }

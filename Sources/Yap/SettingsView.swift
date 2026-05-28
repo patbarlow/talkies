@@ -490,7 +490,7 @@ struct DictatePane: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            shortcutRow
+            shortcutsSection
             languageRow
             cleanupSection
             vocabularySection
@@ -498,12 +498,30 @@ struct DictatePane: View {
         }
     }
 
-    private var shortcutRow: some View {
-        HStack(alignment: .center) {
-            Text("Shortcut").font(.body.weight(.semibold))
-            Spacer()
-            HotkeyPicker(spec: $settings.hotkey)
-                .frame(width: 240)
+    private var shortcutsSection: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("Shortcuts").font(.body.weight(.semibold))
+                .padding(.bottom, 12)
+
+            HStack(alignment: .center) {
+                Text("Keyboard").font(.body)
+                Spacer()
+                HotkeyPicker(spec: $settings.hotkey)
+                    .frame(width: 240)
+            }
+
+            Divider().padding(.vertical, 12)
+
+            HStack(alignment: .center) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Mouse").font(.body)
+                    Text("Click to start, click again to stop.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                Spacer()
+                MouseShortcutPicker(spec: $settings.mouseHotkey)
+                    .frame(width: 240)
+            }
         }
         .padding(16)
         .background(SettingsCard())

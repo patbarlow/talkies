@@ -6,16 +6,12 @@ struct PermissionsPane: View {
     @State private var micStatus: AVAuthorizationStatus = AVCaptureDevice.authorizationStatus(for: .audio)
     @State private var axGranted: Bool = AXIsProcessTrusted()
     @State private var pollTimer: Timer?
+    @State private var launchAtLogin = LoginItem.isEnabled
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Permissions")
-                    .font(.title2.bold())
-                Text("Yap needs two things to work. Audio and transcripts never leave your Mac until you hold the push-to-talk key.")
-                    .foregroundStyle(.secondary)
-                    .font(.callout)
-            }
+            Text("Permissions")
+                .font(.title2.bold())
 
             PermissionCard(
                 tile: Tile.mic,
@@ -37,10 +33,37 @@ struct PermissionsPane: View {
                 action: requestAccessibility
             )
 
+            launchAtLoginRow
+
             Spacer(minLength: 0)
         }
         .onAppear { startPolling() }
         .onDisappear { stopPolling() }
+    }
+
+    private var launchAtLoginRow: some View {
+        HStack(alignment: .center, spacing: 14) {
+            IconTile(systemName: "power", gradient: Tile.account, size: 40, cornerRadius: 10, iconScale: 0.48)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Launch at login").font(.body.weight(.semibold))
+                Text("Start Yap automatically when you log in.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            Spacer()
+
+            Toggle("", isOn: $launchAtLogin)
+                .labelsHidden()
+                .toggleStyle(.switch)
+                .controlSize(.mini)
+                .disabled(!LoginItem.isAvailable)
+                .onChange(of: launchAtLogin) { _, new in
+                    _ = LoginItem.setEnabled(new)
+                    launchAtLogin = LoginItem.isEnabled
+                }
+        }
+        .padding(16)
+        .background(RoundedRectangle(cornerRadius: 14).fill(Color(nsColor: .controlBackgroundColor)))
     }
 
     private var micStatusLabel: String {
@@ -58,6 +81,8 @@ struct PermissionsPane: View {
             AVCaptureDevice.requestAccess(for: .audio) { _ in
                 DispatchQueue.main.async {
                     micStatus = AVCaptureDevice.authorizationStatus(for: .audio)
+                    // TCC dialog steals focus and macOS doesn't restore it.
+                    bringYapWindowsToFront()
                 }
             }
         } else {
@@ -66,11 +91,11 @@ struct PermissionsPane: View {
     }
 
     private func requestAccessibility() {
-        // Pops the system dialog on first call; no-op on subsequent calls.
+        // See OnboardingViewModel.requestAccessibility for the rationale —
+        // the TCC prompt also registers Yap in the list, so we use it instead
+        // of jumping straight to System Settings.
         let opts = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
         _ = AXIsProcessTrustedWithOptions(opts)
-        // Also open the pane so the user can toggle if the prompt has been dismissed before.
-        NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)
     }
 
     private func startPolling() {
@@ -80,7 +105,10 @@ struct PermissionsPane: View {
                 let newMic = AVCaptureDevice.authorizationStatus(for: .audio)
                 let newAX = AXIsProcessTrusted()
                 if newMic != micStatus { micStatus = newMic }
-                if newAX != axGranted { axGranted = newAX }
+                if newAX != axGranted {
+                    axGranted = newAX
+                    NotificationCenter.default.post(name: .yapAccessibilityChanged, object: nil)
+                }
             }
         }
     }
