@@ -7,6 +7,7 @@
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
     "typecheck": "tsc --noEmit",
+    "test:guard": "tsx scripts/test-hallucination-guard.ts",
     "db:create": "wrangler d1 create talkies",
     "db:migrate": "wrangler d1 execute talkies --local --file=./schema.sql",
     "db:migrate:remote": "wrangler d1 execute talkies --remote --file=./schema.sql",
@@ -18,6 +19,7 @@
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20241218.0",
+    "tsx": "^4.22.4",
     "typescript": "^5.7.2",
     "wrangler": "^3.95.0"
   }
